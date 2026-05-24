@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode/utf8"
 )
@@ -86,11 +87,34 @@ func IsUnderRoot(root, path string) bool {
 	if err != nil {
 		return false
 	}
+
+	if resolvedRoot, resolveErr := filepath.EvalSymlinks(absRoot); resolveErr == nil {
+		absRoot = resolvedRoot
+	}
+	if resolvedPath, resolveErr := filepath.EvalSymlinks(absPath); resolveErr == nil {
+		absPath = resolvedPath
+	}
+
+	absRoot = filepath.Clean(absRoot)
+	absPath = filepath.Clean(absPath)
+
+	if runtime.GOOS == "windows" {
+		absRoot = strings.ToLower(absRoot)
+		absPath = strings.ToLower(absPath)
+	}
+
 	rel, err := filepath.Rel(absRoot, absPath)
 	if err != nil {
 		return false
 	}
-	return !strings.HasPrefix(rel, "..") && rel != ".."
+	rel = filepath.Clean(rel)
+	if rel == ".." {
+		return false
+	}
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 // Canonical resolves all symlinks in path and verifies the result is still

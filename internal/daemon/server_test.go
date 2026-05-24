@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hali/internal/cache"
+	"hali/internal/config"
 	"hali/internal/events"
 	"hali/internal/torrent"
 )
@@ -255,8 +256,19 @@ func TestHandleSeedRejectsUnsafeFilename(t *testing.T) {
 func TestHandleEnqueueEventPersistsQueuedEvent(t *testing.T) {
 	serviceDir := t.TempDir()
 	t.Setenv("HALI_SERVICE_DATA_DIR", serviceDir)
+	dataDir := t.TempDir()
+	torrentDir := t.TempDir()
 
-	_, addr := newTestServer(t)
+	engine, err := torrent.NewEngine(dataDir, torrentDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	t.Cleanup(engine.Close)
+
+	store := &cache.Store{Root: dataDir}
+	stats := torrent.NewStatsCollector(engine)
+	srv := NewServer(engine, store, stats)
+	srv.eventWorker = events.NewWorker(filepath.Join(serviceDir, "events"), config.LoadService)
 	event := events.ModelPullEvent{
 		ModelID:   "mistral:7b:instruct:q4_k_m",
 		Revision:  "abc123",
@@ -267,7 +279,7 @@ func TestHandleEnqueueEventPersistsQueuedEvent(t *testing.T) {
 		Timestamp: time.Unix(123, 0).UTC(),
 	}
 
-	resp := sendIPC(t, addr, Request{Cmd: CmdEnqueueEvent, Event: &event, AllowUnreachablePublish: true})
+	resp := srv.handleEnqueueEvent(Request{Cmd: CmdEnqueueEvent, Event: &event, AllowUnreachablePublish: true})
 	if !resp.OK {
 		t.Fatalf("CmdEnqueueEvent failed: %s", resp.Error)
 	}
