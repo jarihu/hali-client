@@ -404,13 +404,13 @@ func TestDownloadErrorStatus(t *testing.T) {
 }
 
 func TestDownloadOnceStalledTransferTriggersRetryableError(t *testing.T) {
-	prevTimeout := downloadIdleTimeout
-	prevInterval := downloadIdleCheckInterval
-	downloadIdleTimeout = 80 * time.Millisecond
-	downloadIdleCheckInterval = 20 * time.Millisecond
+	prevTimeout := downloadIdleTimeout.Load()
+	prevInterval := downloadIdleCheckInterval.Load()
+	downloadIdleTimeout.Store(int64(80 * time.Millisecond))
+	downloadIdleCheckInterval.Store(int64(20 * time.Millisecond))
 	t.Cleanup(func() {
-		downloadIdleTimeout = prevTimeout
-		downloadIdleCheckInterval = prevInterval
+		downloadIdleTimeout.Store(prevTimeout)
+		downloadIdleCheckInterval.Store(prevInterval)
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

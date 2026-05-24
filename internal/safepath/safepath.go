@@ -132,7 +132,13 @@ func Canonical(root, path string) (string, error) {
 		resolved = filepath.Join(resolved, missing[i])
 	}
 
-	if !IsUnderRoot(root, resolved) {
+	// Resolve symlinks on root too so that comparisons work correctly even
+	// when root contains Windows 8.3 short names or other symlink forms.
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("canonical: resolve root %q: %w", root, err)
+	}
+	if !IsUnderRoot(resolvedRoot, resolved) {
 		return "", fmt.Errorf("path %q escapes root %q after symlink resolution", resolved, root)
 	}
 	return resolved, nil

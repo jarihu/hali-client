@@ -218,9 +218,14 @@ type Progress struct {
 }
 
 var (
-	downloadIdleTimeout       = 2 * time.Minute
-	downloadIdleCheckInterval = 5 * time.Second
+	downloadIdleTimeout       atomic.Int64
+	downloadIdleCheckInterval atomic.Int64
 )
+
+func init() {
+	downloadIdleTimeout.Store(int64(2 * time.Minute))
+	downloadIdleCheckInterval.Store(int64(5 * time.Second))
+}
 
 // Download streams a file from HF to destDir, calling progress on each chunk.
 // Uses a .tmp file and renames on success to prevent partial writes.
@@ -363,7 +368,7 @@ func (c *Client) downloadOnce(ctx context.Context, repoID, filename, revision, d
 	watchdogTriggered := atomic.Bool{}
 	watchdogStop := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(downloadIdleCheckInterval)
+		ticker := time.NewTicker(time.Duration(downloadIdleCheckInterval.Load()))
 		defer ticker.Stop()
 		lastWritten := pr.currentRead()
 		lastAdvance := time.Now()
@@ -380,7 +385,7 @@ func (c *Client) downloadOnce(ctx context.Context, repoID, filename, revision, d
 					lastAdvance = time.Now()
 					continue
 				}
-				if time.Since(lastAdvance) > downloadIdleTimeout {
+				if time.Since(lastAdvance) > time.Duration(downloadIdleTimeout.Load()) {
 					watchdogTriggered.Store(true)
 					cancelReq()
 					return
