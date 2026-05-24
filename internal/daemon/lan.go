@@ -295,6 +295,8 @@ type Announcer struct {
 	getModels func() []lanModelAnnounce
 	getPort   func() int
 	stopCh    chan struct{}
+	stopOnce  sync.Once
+	wg        sync.WaitGroup
 }
 
 func NewAnnouncer(index *LanIndex, nodeID string, secret []byte, hmacAuth bool, debug bool, getModels func() []lanModelAnnounce, getPort func() int) *Announcer {
@@ -312,15 +314,21 @@ func NewAnnouncer(index *LanIndex, nodeID string, secret []byte, hmacAuth bool, 
 
 // Run starts the announcer and listener in background goroutines.
 func (a *Announcer) Run() {
+	a.wg.Add(2)
 	go a.runAnnounce()
 	go a.runListen()
 }
 
 func (a *Announcer) Stop() {
-	close(a.stopCh)
+	a.stopOnce.Do(func() {
+		close(a.stopCh)
+		a.wg.Wait()
+	})
 }
 
 func (a *Announcer) runAnnounce() {
+	defer a.wg.Done()
+
 	// Random startup phase offset (0–25s) to prevent boot storms (spec §8.2).
 	startupDelay := time.Duration(rand.Int63n(int64(startupOffsetMax)))
 	select {
@@ -548,6 +556,8 @@ func isUsableLANIPv4(ip net.IP) bool {
 }
 
 func (a *Announcer) runListen() {
+	defer a.wg.Done()
+
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: lanMcastPort})
 	if err != nil {
 		slog.Debug("lan listen: failed to bind UDP", "error", err)

@@ -330,18 +330,30 @@ func (s *Server) bindListeners(ipcLn, webLn net.Listener, httpAddr string) error
 		slog.Info("web_token_generated", "token_path", webTokenPath())
 	}
 
-	go s.webSrv.Serve(s.webLn) //nolint:errcheck
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		_ = s.webSrv.Serve(s.webLn)
+	}()
 
 	s.stats.Start()
 	s.eventWorker = events.NewWorker(events.DefaultQueueDir(), config.LoadService)
-	go s.eventWorker.Run()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.eventWorker.Run()
+	}()
 
 	// Start LAN announcer once the torrent port is known.
 	s.announcer = NewAnnouncer(s.lanIndex, s.nodeID, s.lanSecret, len(s.lanSecret) > 0, s.lanDebug, s.seedingModels, s.engine.Port)
 	s.announcer.Run()
 
 	// Seed existing models in background.
-	go s.seedExisting()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.seedExisting()
+	}()
 
 	// Register optional publishing hooks (e.g. qBittorrent seeding).
 	s.setupPublishingHooks()
@@ -356,7 +368,11 @@ func (s *Server) bindListeners(ipcLn, webLn net.Listener, httpAddr string) error
 	// Write .ready sentinel so tray knows the HTTP server is accepting.
 	os.WriteFile(readyFilePath(), []byte("1"), 0600) //nolint:errcheck
 
-	go s.watchConfigAndRestart()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.watchConfigAndRestart()
+	}()
 
 	return nil
 }
@@ -539,16 +555,17 @@ func (s *Server) Stop() {
 			s.ipcLn.Close() //nolint:errcheck
 		}
 
-		// Wait for IPC accept loop and all in-flight connection handlers to finish
-		// before shutting down shared services they may still touch.
-		s.wg.Wait()
-
 		if s.announcer != nil {
 			s.announcer.Stop()
 		}
 		if s.eventWorker != nil {
 			s.eventWorker.Stop()
 		}
+
+		// Wait for all server-owned background goroutines (IPC/web/watchers/seeding)
+		// to finish before tearing down stats/engine.
+		s.wg.Wait()
+
 		s.stats.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := s.engine.Shutdown(ctx); err != nil {

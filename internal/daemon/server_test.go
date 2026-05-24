@@ -337,7 +337,9 @@ func TestIPCClientReconnectAfterDaemonRestart(t *testing.T) {
 			t.Fatalf("startOnAddrs: %v", err)
 		}
 		addr := srv.ipcLn.Addr().String()
-		go srv.serveIPC() //nolint:errcheck
+		go func() {
+			_ = srv.serveIPC()
+		}()
 		return srv, engine, addr
 	}
 

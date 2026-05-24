@@ -76,6 +76,36 @@ func IsValidInfohashV2(s string) bool {
 	return true
 }
 
+// resolvePartial calls filepath.EvalSymlinks on p if it exists, or walks up
+// to the deepest existing ancestor, resolves that, and re-appends the missing
+// components. This handles Windows 8.3 short names (e.g. RUNNER~1 → runneradmin)
+// even when part of the path does not yet exist on disk.
+func resolvePartial(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	missing := make([]string, 0, 4)
+	anchor := p
+	for {
+		parent := filepath.Dir(anchor)
+		if parent == anchor {
+			return p // at filesystem root, give up
+		}
+		missing = append(missing, filepath.Base(anchor))
+		anchor = parent
+		if _, err := os.Lstat(anchor); err == nil {
+			resolved, err := filepath.EvalSymlinks(anchor)
+			if err != nil {
+				return p
+			}
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return resolved
+		}
+	}
+}
+
 // IsUnderRoot reports whether path is contained within root after resolving "..".
 // Does NOT resolve symlinks — call Canonical first when the path already exists on disk.
 func IsUnderRoot(root, path string) bool {
@@ -88,12 +118,8 @@ func IsUnderRoot(root, path string) bool {
 		return false
 	}
 
-	if resolvedRoot, resolveErr := filepath.EvalSymlinks(absRoot); resolveErr == nil {
-		absRoot = resolvedRoot
-	}
-	if resolvedPath, resolveErr := filepath.EvalSymlinks(absPath); resolveErr == nil {
-		absPath = resolvedPath
-	}
+	absRoot = resolvePartial(absRoot)
+	absPath = resolvePartial(absPath)
 
 	absRoot = filepath.Clean(absRoot)
 	absPath = filepath.Clean(absPath)
@@ -101,16 +127,22 @@ func IsUnderRoot(root, path string) bool {
 	if runtime.GOOS == "windows" {
 		absRoot = strings.TrimRight(strings.ToLower(absRoot), "\\/")
 		absPath = strings.TrimRight(strings.ToLower(absPath), "\\/")
-		if absPath == absRoot {
-			return true
-		}
-		return strings.HasPrefix(absPath, absRoot+"\\")
 	}
 
-	if absPath == absRoot {
+	rel, err := filepath.Rel(absRoot, absPath)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
 		return true
 	}
-	return strings.HasPrefix(absPath, absRoot+string(filepath.Separator))
+	if rel == ".." {
+		return false
+	}
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 // Canonical resolves all symlinks in path and verifies the result is still

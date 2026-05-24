@@ -99,7 +99,9 @@ func startSrv(t *testing.T, eng *torrent.Engine, store *cache.Store) *Server {
 		t.Fatalf("startOnAddrs: %v", err)
 	}
 	t.Cleanup(srv.Stop)
-	go srv.serveIPC() //nolint:errcheck
+	go func() {
+		_ = srv.serveIPC()
+	}()
 	return srv
 }
 
