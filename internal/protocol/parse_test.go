@@ -11,6 +11,7 @@ func TestParse_Valid(t *testing.T) {
 		namespace string
 		name      string
 		version   string
+		file      string
 		repoID    string
 		revision  string
 	}{
@@ -23,6 +24,18 @@ func TestParse_Valid(t *testing.T) {
 			raw:       "hali://model/Qwen/Qwen3-32B?version=latest",
 			namespace: "Qwen", name: "Qwen3-32B", version: "latest",
 			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
+			raw:       "hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?file=Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+			namespace: "unsloth", name: "Qwen3.6-35B-A3B-MTP-GGUF", version: "",
+			file:   "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+			repoID: "unsloth/Qwen3.6-35B-A3B-MTP-GGUF", revision: "main",
+		},
+		{
+			raw:       "hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?version=latest&file=BF16%2FQwen3.6-35B-A3B-BF16-00001-of-00002.gguf",
+			namespace: "unsloth", name: "Qwen3.6-35B-A3B-MTP-GGUF", version: "latest",
+			file:   "BF16/Qwen3.6-35B-A3B-BF16-00001-of-00002.gguf",
+			repoID: "unsloth/Qwen3.6-35B-A3B-MTP-GGUF", revision: "main",
 		},
 		{
 			raw:       "hali://model/TheBloke/Mistral-7B-Instruct-v0.2-GGUF?version=abc1234567890123456789012345678901234567",
@@ -70,6 +83,9 @@ func TestParse_Valid(t *testing.T) {
 			}
 			if h.Version != tc.version {
 				t.Errorf("version: got %q, want %q", h.Version, tc.version)
+			}
+			if h.File != tc.file {
+				t.Errorf("file: got %q, want %q", h.File, tc.file)
 			}
 			if h.RepositoryID() != tc.repoID {
 				t.Errorf("RepositoryID: got %q, want %q", h.RepositoryID(), tc.repoID)
@@ -185,6 +201,23 @@ func TestParse_InvalidVersion(t *testing.T) {
 			_, err := Parse(raw)
 			if err == nil {
 				t.Fatalf("expected error for invalid version in %q", raw)
+			}
+		})
+	}
+}
+
+func TestParse_InvalidFileParameter(t *testing.T) {
+	cases := []string{
+		"hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?file=..%2Fsecret.gguf",
+		"hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?file=%2Fabsolute.gguf",
+		"hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?file=bad\\path.gguf",
+		"hali://model/unsloth/Qwen3.6-35B-A3B-MTP-GGUF?file=folder%2F.%2Ffile.gguf",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatalf("expected error for invalid file parameter in %q", raw)
 			}
 		})
 	}

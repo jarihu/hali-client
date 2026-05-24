@@ -21,6 +21,7 @@ type HaliURL struct {
 	Namespace string // e.g., "Qwen"
 	Name      string // e.g., "Qwen3-32B"
 	Version   string // "latest", a 40-char hex SHA, or a short tag
+	File      string // optional GGUF filename/path within the repo
 }
 
 // RepositoryID returns the neutral repository identifier (namespace/name).
@@ -103,11 +104,41 @@ func Parse(raw string) (*HaliURL, error) {
 			return nil, fmt.Errorf("invalid version %q", version)
 		}
 	}
+	file, err := sanitizeRequestedFile(q.Get("file"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &HaliURL{
 		Action:    action,
 		Namespace: namespace,
 		Name:      name,
 		Version:   version,
+		File:      file,
 	}, nil
+}
+
+func sanitizeRequestedFile(raw string) (string, error) {
+	file := strings.TrimSpace(raw)
+	if file == "" {
+		return "", nil
+	}
+	if len(file) > 512 {
+		return "", fmt.Errorf("invalid file parameter: too long")
+	}
+	if strings.Contains(file, "\\") {
+		return "", fmt.Errorf("invalid file parameter: backslashes are not allowed")
+	}
+	if strings.ContainsAny(file, "\r\n\t") {
+		return "", fmt.Errorf("invalid file parameter: contains control characters")
+	}
+	if strings.HasPrefix(file, "/") {
+		return "", fmt.Errorf("invalid file parameter: absolute paths are not allowed")
+	}
+	for _, seg := range strings.Split(file, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return "", fmt.Errorf("invalid file parameter: path traversal not allowed")
+		}
+	}
+	return file, nil
 }

@@ -45,7 +45,13 @@ func runOpen(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve %s: %w", parsed.RepositoryID(), err)
 	}
 
-	chosen := selectBestGGUF(files)
+	chosen, err := selectRequestedGGUF(files, parsed.File)
+	if err != nil {
+		return err
+	}
+	if chosen == "" {
+		chosen = selectBestGGUF(files)
+	}
 	if chosen == "" {
 		return fmt.Errorf("no GGUF files found for %s", parsed.RepositoryID())
 	}
@@ -56,6 +62,19 @@ func runOpen(cmd *cobra.Command, args []string) error {
 		FileName:       chosen,
 		NonInteractive: true,
 	})
+}
+
+func selectRequestedGGUF(files []hf.File, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", nil
+	}
+	for _, f := range filterGGUF(files) {
+		if strings.EqualFold(strings.TrimSpace(f.Name), requested) {
+			return f.Name, nil
+		}
+	}
+	return "", fmt.Errorf("requested file %q not found among GGUF variants", requested)
 }
 
 // normalizeQuant makes quantization token matching robust against dash/underscore variants.
