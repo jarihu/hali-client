@@ -574,7 +574,7 @@ func ServiceDataDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_DATA_DIR")); d != "" {
 		return d
 	}
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
 		return "/var/lib/hali"
 	}
 	return DataDir()
@@ -585,7 +585,7 @@ func ServiceLogDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_LOG_DIR")); d != "" {
 		return d
 	}
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
 		return "/var/log/hali"
 	}
 	return filepath.Join(DataDir(), "logs")
@@ -596,7 +596,7 @@ func ServiceRunDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_RUN_DIR")); d != "" {
 		return d
 	}
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
 		return "/run/hali"
 	}
 	return DataDir()

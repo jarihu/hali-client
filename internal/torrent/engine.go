@@ -413,7 +413,7 @@ func (e *Engine) seedInner(modelDir, filename, modelID, hfRepo, revision string,
 	}
 
 	spec := gotorrent.TorrentSpecFromMetaInfo(mi)
-	spec.Storage = storage.NewFile(modelDir)
+	spec.Storage = modelDirStorage(modelDir)
 
 	var t *gotorrent.Torrent
 	for attempt := 0; attempt < seedAddMaxRetries; attempt++ {
@@ -477,7 +477,7 @@ func (e *Engine) SeedFromTorrentFile(modelDir, infohashHex, modelID string, iden
 	}
 
 	spec := gotorrent.TorrentSpecFromMetaInfo(mi)
-	spec.Storage = storage.NewFile(modelDir)
+	spec.Storage = modelDirStorage(modelDir)
 
 	var t *gotorrent.Torrent
 	for attempt := 0; attempt < seedAddMaxRetries; attempt++ {
@@ -608,7 +608,7 @@ func (e *Engine) StartDownload(modelDir, modelID, ihHex, ihV2 string, peerAddrs 
 	if err != nil {
 		return "", fmt.Errorf("parsing magnet: %w", err)
 	}
-	spec.Storage = storage.NewFile(modelDir)
+	spec.Storage = modelDirStorage(modelDir)
 	spec.PeerAddrs = append(spec.PeerAddrs, peerAddrs...)
 
 	t, _, err := e.client.AddTorrentSpec(spec)
@@ -952,6 +952,22 @@ func (e *Engine) ActiveModels() []EngineModelState {
 		out = append(out, state)
 	}
 	return out
+}
+
+// modelDirStorage returns a file storage backend rooted at modelDir where each
+// torrent file is stored at modelDir/<filename> with no extra subdirectory.
+// storage.NewFile's default FilePathMaker prepends info.Name to the file path,
+// producing modelDir/<name>/<name> for single-file torrents — this fixes that.
+func modelDirStorage(modelDir string) storage.ClientImplCloser {
+	return storage.NewFileOpts(storage.NewFileClientOpts{
+		ClientBaseDir: modelDir,
+		TorrentDirMaker: func(baseDir string, _ *metainfo.Info, _ metainfo.Hash) string {
+			return baseDir
+		},
+		FilePathMaker: func(opts storage.FilePathMakerOpts) string {
+			return filepath.Join(opts.File.BestPath()...)
+		},
+	})
 }
 
 func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSize int64, private *bool) (metainfo.Info, map[string]bencode.Bytes, map[string]string, error) {
