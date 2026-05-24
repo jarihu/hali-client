@@ -85,8 +85,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ github.ref_name }}
         run: |
+          envsubst < packaging/nfpm.yaml > /tmp/nfpm-resolved.yaml
           nfpm pkg \
-            --config packaging/nfpm.yaml \
+            --config /tmp/nfpm-resolved.yaml \
             --packager deb \
             --target dist/hali_${{ github.ref_name }}_linux_${{ matrix.goarch }}.deb
 
