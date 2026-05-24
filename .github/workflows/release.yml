@@ -88,6 +88,16 @@ jobs:
         if: matrix.pkg == 'nsis'
         run: sudo apt-get install -y nsis
 
+      - name: Verify NSIS protocol handler registration
+        if: matrix.pkg == 'nsis'
+        run: |
+          set -euo pipefail
+          test -f packaging/hali.nsi
+          grep -F 'WriteRegStr HKCR "hali" "" "URL:Hali Protocol"' packaging/hali.nsi
+          grep -F 'WriteRegStr HKCR "hali" "URL Protocol" ""' packaging/hali.nsi
+          grep -F 'WriteRegStr HKCR "hali\shell\open\command" ""' packaging/hali.nsi
+          grep -F 'DeleteRegKey HKCR "hali"' packaging/hali.nsi
+
       - name: Build Windows installer
         if: matrix.pkg == 'nsis'
         run: makensis -DVERSION=${{ github.ref_name }} -DREPOROOT=$(pwd) packaging/hali.nsi

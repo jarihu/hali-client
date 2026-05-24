@@ -158,6 +158,101 @@ func TestWorkerDrainDropsEventOnPermanentHTTPError(t *testing.T) {
 	}
 }
 
+func TestWorkerDrainDefersRetryableHTTPError(t *testing.T) {
+	t.Setenv("HALI_SERVICE_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+	q := NewQueue(dir)
+	event := ModelPullEvent{ModelID: "m", Revision: "r", InfoHash: "da39a3ee5e6b4b0d3255bfef95601890afd80709", Magnet: "magnet:?xt=urn:btih:da39a3ee5e6b4b0d3255bfef95601890afd80709", SourceURL: "src", LocalHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", Timestamp: time.Unix(1, 0).UTC()}
+	writeTestTorrentFile(t, event.InfoHash)
+	if err := q.Enqueue(event); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	var postAttempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		atomic.AddInt32(&postAttempts, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("backend unavailable"))
+	}))
+	defer server.Close()
+
+	worker := NewWorker(dir, func() (config.File, error) {
+		return config.File{RegistryIngestURL: server.URL}, nil
+	})
+	close(worker.stopCh)
+
+	before := time.Now().UTC()
+	worker.drain()
+
+	queued, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(queued) != 1 {
+		t.Fatalf("queued = %d, want 1", len(queued))
+	}
+	if queued[0].Event.DeliveryAttempts != 1 {
+		t.Fatalf("DeliveryAttempts = %d, want 1", queued[0].Event.DeliveryAttempts)
+	}
+	if queued[0].Event.NextAttemptAfter.IsZero() {
+		t.Fatal("NextAttemptAfter should be set for deferred retry")
+	}
+	if !queued[0].Event.NextAttemptAfter.After(before) {
+		t.Fatalf("NextAttemptAfter = %s, want future time", queued[0].Event.NextAttemptAfter)
+	}
+	if got := atomic.LoadInt32(&postAttempts); got != 1 {
+		t.Fatalf("post attempts = %d, want 1 when stopCh is closed", got)
+	}
+}
+
+func TestWorkerDrainDropsEventAfterMaxRetryableFailures(t *testing.T) {
+	t.Setenv("HALI_SERVICE_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+	q := NewQueue(dir)
+	event := ModelPullEvent{
+		ModelID:          "m",
+		Revision:         "r",
+		InfoHash:         "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		Magnet:           "magnet:?xt=urn:btih:da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		SourceURL:        "src",
+		LocalHash:        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Timestamp:        time.Unix(1, 0).UTC(),
+		DeliveryAttempts: maxDeliveryAttempts - 1,
+	}
+	writeTestTorrentFile(t, event.InfoHash)
+	if err := q.Enqueue(event); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	worker := NewWorker(dir, func() (config.File, error) {
+		return config.File{RegistryIngestURL: server.URL}, nil
+	})
+	close(worker.stopCh)
+
+	worker.drain()
+
+	queued, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("queued = %d, want 0", len(queued))
+	}
+}
+
 func TestDefaultQueueDirUsesServiceDataDir(t *testing.T) {
 	serviceDir := t.TempDir()
 	t.Setenv("HALI_SERVICE_DATA_DIR", serviceDir)

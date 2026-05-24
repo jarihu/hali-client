@@ -23,6 +23,8 @@ type Worker struct {
 	loadCfg func() (config.File, error)
 }
 
+const maxDeliveryAttempts = 8
+
 func NewWorker(queueDir string, loadCfg func() (config.File, error)) *Worker {
 	return &Worker{
 		queue:   NewQueue(queueDir),
@@ -90,7 +92,11 @@ func (w *Worker) drain() {
 		return
 	}
 	client := NewIngestClient(cfg.RegistryIngestURLValue())
+	now := time.Now().UTC()
 	for _, queuedEvent := range queued {
+		if !queuedEvent.Event.NextAttemptAfter.IsZero() && queuedEvent.Event.NextAttemptAfter.After(now) {
+			continue
+		}
 		event, attrErr := w.withPublisherAttribution(queuedEvent.Event)
 		if attrErr != nil {
 			slog.Warn("event_publisher_attribution_failed", "error", attrErr)
@@ -105,9 +111,25 @@ func (w *Worker) drain() {
 				}
 				continue
 			}
-			slog.Warn("event_delivery_failed", "error", err)
-			return
+			event.DeliveryAttempts++
+			if event.DeliveryAttempts >= maxDeliveryAttempts {
+				slog.Warn("event_delivery_dropped_after_retries", "error", err, "path", queuedEvent.Path, "attempts", event.DeliveryAttempts)
+				if delErr := w.queue.Delete(queuedEvent.Path); delErr != nil {
+					slog.Warn("event_queue_delete_failed", "path", queuedEvent.Path, "error", delErr)
+					return
+				}
+				continue
+			}
+			event.NextAttemptAfter = now.Add(retryDelay(event.DeliveryAttempts))
+			if updateErr := w.queue.Update(queuedEvent.Path, event); updateErr != nil {
+				slog.Warn("event_queue_update_failed", "path", queuedEvent.Path, "error", updateErr)
+				return
+			}
+			slog.Warn("event_delivery_deferred", "error", err, "path", queuedEvent.Path, "attempts", event.DeliveryAttempts, "next_attempt_after", event.NextAttemptAfter)
+			continue
 		}
+		event.DeliveryAttempts = 0
+		event.NextAttemptAfter = time.Time{}
 		if err := w.queue.Delete(queuedEvent.Path); err != nil {
 			slog.Warn("event_queue_delete_failed", "path", queuedEvent.Path, "error", err)
 			return
@@ -169,6 +191,7 @@ func loadProfilePubKey() string {
 
 func (w *Worker) sendWithRetry(client *IngestClient, event ModelPullEvent) error {
 	backoff := time.Second
+	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		err := client.Send(ctx, event)
@@ -179,6 +202,10 @@ func (w *Worker) sendWithRetry(client *IngestClient, event ModelPullEvent) error
 		if !isRetryableIngestError(err) {
 			return err
 		}
+		lastErr = err
+		if attempt == 4 {
+			break
+		}
 		select {
 		case <-w.stopCh:
 			return err
@@ -188,5 +215,22 @@ func (w *Worker) sendWithRetry(client *IngestClient, event ModelPullEvent) error
 			backoff *= 2
 		}
 	}
-	return client.Send(context.Background(), event)
+	if lastErr != nil {
+		return lastErr
+	}
+	return context.DeadlineExceeded
+}
+
+func retryDelay(attempt int) time.Duration {
+	if attempt <= 0 {
+		return 30 * time.Second
+	}
+	delay := 30 * time.Second
+	for i := 1; i < attempt; i++ {
+		delay *= 2
+		if delay >= 30*time.Minute {
+			return 30 * time.Minute
+		}
+	}
+	return delay
 }

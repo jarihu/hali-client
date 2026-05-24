@@ -33,10 +33,22 @@ Unicode true
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
+  ; Best effort: stop any running daemon/service instances before replacing binaries.
+  ; Keep this tolerant so fresh installs are not blocked when nothing is running.
+  ExecWait 'sc stop "${SVC_NAME}"'
+  ExecWait 'sc stop "HaliDaemon"'
+  ExecWait 'taskkill /F /T /IM halid.exe'
+
   SetOutPath "${INSTALL_DIR}"
 
   File /oname=hali.exe "${REPOROOT}/dist/hali-windows-amd64.exe"
   File /oname=halid.exe "${REPOROOT}/dist/halid-windows-amd64.exe"
+
+  ; Register hali:// URL protocol handler
+  WriteRegStr HKCR "hali" "" "URL:Hali Protocol"
+  WriteRegStr HKCR "hali" "URL Protocol" ""
+  WriteRegStr HKCR "hali\DefaultIcon" "" '"${INSTALL_DIR}\hali.exe",0'
+  WriteRegStr HKCR "hali\shell\open\command" "" '"${INSTALL_DIR}\hali.exe" open "%1"'
 
   ; Add install dir to system PATH
   ReadRegStr $0 HKLM "${REG_ENV}" "PATH"
@@ -63,6 +75,9 @@ SectionEnd
 Section "Uninstall"
   ExecWait 'sc stop "${SVC_NAME}"'
   ExecWait 'sc delete "${SVC_NAME}"'
+
+  ; Remove hali:// URL protocol handler
+  DeleteRegKey HKCR "hali"
 
   ; Remove install dir from system PATH
   ReadRegStr $0 HKLM "${REG_ENV}" "PATH"

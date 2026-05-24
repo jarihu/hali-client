@@ -89,6 +89,24 @@ func (q *Queue) Delete(path string) error {
 	return nil
 }
 
+func (q *Queue) Update(path string, event ModelPullEvent) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	data, err := json.MarshalIndent(event, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, append(data, '\n'), 0644); err != nil {
+		return fmt.Errorf("write queued event: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("commit queued event: %w", err)
+	}
+	return nil
+}
+
 func (q *Queue) nextFilename() string {
 	var suffix [4]byte
 	if _, err := rand.Read(suffix[:]); err != nil {
