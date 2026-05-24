@@ -37,7 +37,9 @@ func newTestServer(t *testing.T) (*Server, string) {
 	t.Cleanup(srv.Stop)
 
 	addr := srv.ipcLn.Addr().String()
+	srv.wg.Add(1)
 	go func() {
+		defer srv.wg.Done()
 		_ = srv.serveIPC()
 	}()
 	return srv, addr
@@ -337,7 +339,9 @@ func TestIPCClientReconnectAfterDaemonRestart(t *testing.T) {
 			t.Fatalf("startOnAddrs: %v", err)
 		}
 		addr := srv.ipcLn.Addr().String()
+		srv.wg.Add(1)
 		go func() {
+			defer srv.wg.Done()
 			_ = srv.serveIPC()
 		}()
 		return srv, engine, addr

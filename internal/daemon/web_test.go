@@ -39,9 +39,6 @@ func newWebTestServer(t *testing.T) (*Server, string) {
 		t.Fatalf("startOnAddrs: %v", err)
 	}
 	t.Cleanup(srv.Stop)
-	go func() {
-		_ = srv.serveIPC()
-	}()
 
 	webURL := fmt.Sprintf("http://%s", srv.webLn.Addr().String())
 	return srv, webURL

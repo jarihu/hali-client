@@ -507,10 +507,8 @@ func (s *Server) Run() error {
 
 // serveIPC loops on the IPC listener until Stop is called.
 // Callers must have already called Start or startOnAddrs.
+// The caller is responsible for WaitGroup tracking when launching in a goroutine.
 func (s *Server) serveIPC() error {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	sem := make(chan struct{}, 32) // bound concurrent IPC connections to prevent slow-loris
 	for {
 		conn, err := s.ipcLn.Accept()
