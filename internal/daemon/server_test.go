@@ -82,13 +82,16 @@ func TestServerStopClosesPort(t *testing.T) {
 	srv, addr := newTestServer(t)
 
 	srv.Stop()
-	time.Sleep(100 * time.Millisecond)
-
-	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-	if err == nil {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err != nil {
+			return
+		}
 		conn.Close()
-		t.Error("IPC port still reachable after Stop")
+		time.Sleep(25 * time.Millisecond)
 	}
+	t.Error("IPC port still reachable after Stop")
 }
 
 func TestServerUnknownCommand(t *testing.T) {

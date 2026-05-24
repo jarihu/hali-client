@@ -55,7 +55,8 @@ type Server struct {
 	webSrv      *http.Server
 	stopCh      chan struct{}
 	stopOnce    sync.Once
-	wg          sync.WaitGroup
+	wg          sync.WaitGroup // long-lived goroutines owned for server lifetime
+	connWG      sync.WaitGroup // transient IPC connection handlers
 
 	paused   atomic.Bool
 	lanShare atomic.Bool
@@ -498,7 +499,14 @@ func (s *Server) Run() error {
 		return err
 	}
 	defer s.Stop()
-	err := s.serveIPC()
+
+	errCh := make(chan error, 1)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		errCh <- s.serveIPC()
+	}()
+	err := <-errCh
 	if s.restartRequested.Load() {
 		return ErrRestartRequested
 	}
@@ -521,9 +529,9 @@ func (s *Server) serveIPC() error {
 			}
 		}
 		sem <- struct{}{}
-		s.wg.Add(1)
+		s.connWG.Add(1)
 		go func() {
-			defer s.wg.Done()
+			defer s.connWG.Done()
 			defer func() { <-sem }()
 			s.handleConn(conn)
 		}()
@@ -560,9 +568,10 @@ func (s *Server) Stop() {
 			s.eventWorker.Stop()
 		}
 
-		// Wait for all server-owned background goroutines (IPC/web/watchers/seeding)
-		// to finish before tearing down stats/engine.
+		// Wait for server-owned lifecycle goroutines (web/watchers/seeding/serveIPC)
+		// and then in-flight IPC handlers before tearing down stats/engine.
 		s.wg.Wait()
+		s.connWG.Wait()
 
 		s.stats.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
