@@ -77,7 +77,9 @@ jobs:
 
       - name: Install nfpm
         if: matrix.pkg == 'deb'
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        run: |
+          curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.46.3/nfpm_2.46.3_amd64.deb -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
 
       - name: Build .deb package
         if: matrix.pkg == 'deb'

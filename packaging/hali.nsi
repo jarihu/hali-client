@@ -9,7 +9,7 @@
 !define SVC_NAME "halid"
 
 Name "${APP_NAME} ${VERSION}"
-OutFile "dist\hali-${VERSION}-windows-amd64-setup.exe"
+OutFile "dist/hali-${VERSION}-windows-amd64-setup.exe"
 InstallDir "${INSTALL_DIR}"
 InstallDirRegKey HKLM "${REG_UNINSTALL}" "InstallLocation"
 RequestExecutionLevel admin
@@ -17,6 +17,7 @@ SetCompressor lzma
 Unicode true
 
 !include "MUI2.nsh"
+!include "WordFunc.nsh"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -31,8 +32,8 @@ Unicode true
 Section "Install"
   SetOutPath "${INSTALL_DIR}"
 
-  File /oname=hali.exe "dist\hali-windows-amd64.exe"
-  File /oname=halid.exe "dist\halid-windows-amd64.exe"
+  File /oname=hali.exe "dist/hali-windows-amd64.exe"
+  File /oname=halid.exe "dist/halid-windows-amd64.exe"
 
   ; Add install dir to system PATH
   ReadRegStr $0 HKLM "${REG_ENV}" "PATH"
@@ -41,7 +42,7 @@ Section "Install"
 
   ; Register Windows service
   ExecWait 'sc create "${SVC_NAME}" binPath= "${INSTALL_DIR}\halid.exe" start= auto DisplayName= "Hali Model Cache Daemon"'
-  ExecWait 'sc description "${SVC_NAME}" "Hali daemon — caches and seeds LLM model files locally."'
+  ExecWait 'sc description "${SVC_NAME}" "Hali daemon - caches and seeds LLM model files locally."'
   ExecWait 'sc start "${SVC_NAME}"'
 
   ; Uninstaller registration
@@ -62,7 +63,6 @@ Section "Uninstall"
 
   ; Remove install dir from system PATH
   ReadRegStr $0 HKLM "${REG_ENV}" "PATH"
-  ; Strip ";C:\Program Files\Hali" — simplest approach: rebuild without it
   ${WordReplace} "$0" ";${INSTALL_DIR}" "" "+" $1
   WriteRegStr HKLM "${REG_ENV}" "PATH" "$1"
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
