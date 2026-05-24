@@ -66,12 +66,32 @@ func configurePullFlags() {
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
+	repo, fileName := parseRepoArg(args[0])
+	if pullFileName != "" {
+		fileName = pullFileName
+	}
 	return runPullWithOptions(cmd, pull.Options{
-		Repo:           args[0],
+		Repo:           repo,
 		Revision:       "",
-		FileName:       pullFileName,
+		FileName:       fileName,
 		NonInteractive: nonInteractive,
 	})
+}
+
+// parseRepoArg splits a raw pull argument into repo and an optional file name.
+// It handles the ?file= query param convention (e.g. "owner/repo?file=model.gguf").
+func parseRepoArg(raw string) (repo, fileName string) {
+	i := strings.Index(raw, "?")
+	if i < 0 {
+		return raw, ""
+	}
+	repo = raw[:i]
+	for _, kv := range strings.Split(raw[i+1:], "&") {
+		if v, ok := strings.CutPrefix(kv, "file="); ok {
+			return repo, v
+		}
+	}
+	return repo, ""
 }
 
 func runPullWithOptions(cmd *cobra.Command, opts pull.Options) error {

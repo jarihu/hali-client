@@ -7,6 +7,32 @@ import (
 	"hali/internal/daemon"
 )
 
+func TestParseRepoArg(t *testing.T) {
+	tests := []struct {
+		raw      string
+		wantRepo string
+		wantFile string
+	}{
+		{"kirp/TinyLlama-1.1B-Chat-v0.2-gguf?file=ggml-model-q2_k.gguf", "kirp/TinyLlama-1.1B-Chat-v0.2-gguf", "ggml-model-q2_k.gguf"},
+		{"owner/repo?file=model.q4_k_m.gguf&extra=1", "owner/repo", "model.q4_k_m.gguf"},
+		{"owner/repo", "owner/repo", ""},
+		{"mistral", "mistral", ""},
+		{"owner/repo?other=val", "owner/repo", ""},
+		{"owner/repo?", "owner/repo", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			repo, file := parseRepoArg(tt.raw)
+			if repo != tt.wantRepo {
+				t.Errorf("repo: got %q, want %q", repo, tt.wantRepo)
+			}
+			if file != tt.wantFile {
+				t.Errorf("file: got %q, want %q", file, tt.wantFile)
+			}
+		})
+	}
+}
+
 func TestArtifactKeyForPull(t *testing.T) {
 	tests := []struct {
 		modelID  string

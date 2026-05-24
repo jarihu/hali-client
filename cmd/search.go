@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"hali/internal/hf"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -111,8 +114,13 @@ func pickOne(prompt string, items []string) (int, error) {
 		fmt.Printf("  %2d  %s\n", i+1, item)
 	}
 	fmt.Printf("\n%s [1-%d]: ", prompt, len(items))
-	var choice int
-	if _, err := fmt.Scan(&choice); err != nil || choice < 1 || choice > len(items) {
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return 0, fmt.Errorf("invalid selection")
+	}
+	choice, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || choice < 1 || choice > len(items) {
 		return 0, fmt.Errorf("invalid selection")
 	}
 	return choice - 1, nil
