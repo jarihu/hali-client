@@ -1,6 +1,9 @@
 !ifndef VERSION
   !define VERSION "dev"
 !endif
+!ifndef REPOROOT
+  !define REPOROOT "."
+!endif
 
 !define APP_NAME "Hali"
 !define INSTALL_DIR "$PROGRAMFILES64\Hali"
@@ -9,7 +12,7 @@
 !define SVC_NAME "halid"
 
 Name "${APP_NAME} ${VERSION}"
-OutFile "dist/hali-${VERSION}-windows-amd64-setup.exe"
+OutFile "${REPOROOT}/dist/hali-${VERSION}-windows-amd64-setup.exe"
 InstallDir "${INSTALL_DIR}"
 InstallDirRegKey HKLM "${REG_UNINSTALL}" "InstallLocation"
 RequestExecutionLevel admin
@@ -32,8 +35,8 @@ Unicode true
 Section "Install"
   SetOutPath "${INSTALL_DIR}"
 
-  File /oname=hali.exe "dist/hali-windows-amd64.exe"
-  File /oname=halid.exe "dist/halid-windows-amd64.exe"
+  File /oname=hali.exe "${REPOROOT}/dist/hali-windows-amd64.exe"
+  File /oname=halid.exe "${REPOROOT}/dist/halid-windows-amd64.exe"
 
   ; Add install dir to system PATH
   ReadRegStr $0 HKLM "${REG_ENV}" "PATH"

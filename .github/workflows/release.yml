@@ -13,22 +13,13 @@ jobs:
     name: Build and release
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - goos: linux
             goarch: amd64
             suffix: linux-amd64
             pkg: deb
-          - goos: linux
-            goarch: arm64
-            suffix: linux-arm64
-            pkg: deb
-          - goos: darwin
-            goarch: amd64
-            suffix: darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            suffix: darwin-arm64
           - goos: windows
             goarch: amd64
             suffix: windows-amd64
@@ -91,7 +82,7 @@ jobs:
           nfpm pkg \
             --config /tmp/nfpm-resolved.yaml \
             --packager deb \
-            --target dist/hali_${{ github.ref_name }}_linux_${{ matrix.goarch }}.deb
+            --target dist/hali_${{ github.ref_name }}_linux_amd64.deb
 
       - name: Install NSIS
         if: matrix.pkg == 'nsis'
@@ -99,7 +90,7 @@ jobs:
 
       - name: Build Windows installer
         if: matrix.pkg == 'nsis'
-        run: makensis -DVERSION=${{ github.ref_name }} packaging/hali.nsi
+        run: makensis -DVERSION=${{ github.ref_name }} -DREPOROOT=$(pwd) packaging/hali.nsi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
