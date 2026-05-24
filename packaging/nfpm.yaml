@@ -1,0 +1,26 @@
+name: hali
+arch: ${GOARCH}
+platform: linux
+version: ${VERSION}
+maintainer: Hali Contributors
+description: Content-addressed model cache — apt-get for LLMs
+homepage: https://github.com/jarihu/hali-client
+license: MIT
+
+contents:
+  - src: ./dist/hali-linux-${GOARCH}
+    dst: /usr/local/bin/hali
+    file_info:
+      mode: 0755
+  - src: ./dist/halid-linux-${GOARCH}
+    dst: /usr/local/bin/halid
+    file_info:
+      mode: 0755
+  - src: ./packaging/halid.service
+    dst: /lib/systemd/system/halid.service
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: ./packaging/postinstall.sh
+  preremove: ./packaging/preremove.sh

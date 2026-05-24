@@ -18,9 +18,11 @@ jobs:
           - goos: linux
             goarch: amd64
             suffix: linux-amd64
+            pkg: deb
           - goos: linux
             goarch: arm64
             suffix: linux-arm64
+            pkg: deb
           - goos: darwin
             goarch: amd64
             suffix: darwin-amd64
@@ -31,6 +33,7 @@ jobs:
             goarch: amd64
             suffix: windows-amd64
             ext: .exe
+            pkg: nsis
 
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +74,29 @@ jobs:
               -X hali/internal/buildinfo.Edition=oss" \
             -o dist/halid-${{ matrix.suffix }}${{ matrix.ext }} \
             ./cmd/service
+
+      - name: Install nfpm
+        if: matrix.pkg == 'deb'
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build .deb package
+        if: matrix.pkg == 'deb'
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          nfpm pkg \
+            --config packaging/nfpm.yaml \
+            --packager deb \
+            --target dist/hali_${{ github.ref_name }}_linux_${{ matrix.goarch }}.deb
+
+      - name: Install NSIS
+        if: matrix.pkg == 'nsis'
+        run: sudo apt-get install -y nsis
+
+      - name: Build Windows installer
+        if: matrix.pkg == 'nsis'
+        run: makensis -DVERSION=${{ github.ref_name }} packaging/hali.nsi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
