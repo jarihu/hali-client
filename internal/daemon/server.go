@@ -55,6 +55,7 @@ type Server struct {
 	webSrv      *http.Server
 	stopCh      chan struct{}
 	stopOnce    sync.Once
+	wg          sync.WaitGroup
 
 	paused   atomic.Bool
 	lanShare atomic.Bool
@@ -491,6 +492,9 @@ func (s *Server) Run() error {
 // serveIPC loops on the IPC listener until Stop is called.
 // Callers must have already called Start or startOnAddrs.
 func (s *Server) serveIPC() error {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
 	sem := make(chan struct{}, 32) // bound concurrent IPC connections to prevent slow-loris
 	for {
 		conn, err := s.ipcLn.Accept()
@@ -503,7 +507,9 @@ func (s *Server) serveIPC() error {
 			}
 		}
 		sem <- struct{}{}
+		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
 			defer func() { <-sem }()
 			s.handleConn(conn)
 		}()
@@ -521,14 +527,6 @@ func (s *Server) Stop() {
 
 		s.stopPolicy()
 
-		if s.announcer != nil {
-			s.announcer.Stop()
-		}
-		if s.eventWorker != nil {
-			s.eventWorker.Stop()
-		}
-		s.stats.Stop()
-
 		if s.webSrv != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			s.webSrv.Shutdown(ctx) //nolint:errcheck
@@ -540,6 +538,18 @@ func (s *Server) Stop() {
 		if s.ipcLn != nil {
 			s.ipcLn.Close() //nolint:errcheck
 		}
+
+		// Wait for IPC accept loop and all in-flight connection handlers to finish
+		// before shutting down shared services they may still touch.
+		s.wg.Wait()
+
+		if s.announcer != nil {
+			s.announcer.Stop()
+		}
+		if s.eventWorker != nil {
+			s.eventWorker.Stop()
+		}
+		s.stats.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := s.engine.Shutdown(ctx); err != nil {
 			slog.Warn("engine_shutdown_incomplete", "error", err)

@@ -37,7 +37,9 @@ func newTestServer(t *testing.T) (*Server, string) {
 	t.Cleanup(srv.Stop)
 
 	addr := srv.ipcLn.Addr().String()
-	go srv.serveIPC() //nolint:errcheck
+	go func() {
+		_ = srv.serveIPC()
+	}()
 	return srv, addr
 }
 
@@ -76,8 +78,6 @@ func TestServerStartBindsPort(t *testing.T) {
 
 func TestServerStopClosesPort(t *testing.T) {
 	srv, addr := newTestServer(t)
-	// Override cleanup — we call Stop manually to check port closure.
-	t.Cleanup(func() {}) // no-op to avoid double Stop
 
 	srv.Stop()
 	time.Sleep(100 * time.Millisecond)

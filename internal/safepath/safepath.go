@@ -99,22 +99,18 @@ func IsUnderRoot(root, path string) bool {
 	absPath = filepath.Clean(absPath)
 
 	if runtime.GOOS == "windows" {
-		absRoot = strings.ToLower(absRoot)
-		absPath = strings.ToLower(absPath)
+		absRoot = strings.TrimRight(strings.ToLower(absRoot), "\\/")
+		absPath = strings.TrimRight(strings.ToLower(absPath), "\\/")
+		if absPath == absRoot {
+			return true
+		}
+		return strings.HasPrefix(absPath, absRoot+"\\")
 	}
 
-	rel, err := filepath.Rel(absRoot, absPath)
-	if err != nil {
-		return false
+	if absPath == absRoot {
+		return true
 	}
-	rel = filepath.Clean(rel)
-	if rel == ".." {
-		return false
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return false
-	}
-	return true
+	return strings.HasPrefix(absPath, absRoot+string(filepath.Separator))
 }
 
 // Canonical resolves all symlinks in path and verifies the result is still
