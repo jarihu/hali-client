@@ -25,7 +25,7 @@ jobs:
             echo "ERROR: OSS repo must not reference hali-enterprise"
             exit 1
           fi
-          if grep -r "internal/enterprise" --include="*.go" .; then
+          if grep -r "internal/enterprise" --include="*.go" --exclude="enterprise_isolation_test.go" .; then
             echo "ERROR: OSS repo must not reference internal/enterprise"
             exit 1
           fi
@@ -46,6 +46,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libayatana-appindicator3-dev
 
       - name: Vet (OSS)
         run: go vet -tags oss ./...
