@@ -1,0 +1,21 @@
+<div id="activity-fragment">
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Recent activity</div>
+    </div>
+    <div class="section-note">This feed shows settings changes, pause/resume actions, LAN sharing changes, and other recent events.</div>
+    <div class="activity-feed">
+      {{if .Events}}
+        {{range .Events}}
+        <div class="event">
+          <span class="ts">{{.Timestamp.Format "15:04:05"}}</span>
+          <span class="kind">{{.Kind}}</span>
+          <span class="msg">{{.Message}}</span>
+        </div>
+        {{end}}
+      {{else}}
+      <p class="empty">No recent activity.</p>
+      {{end}}
+    </div>
+  </div>
+</div>

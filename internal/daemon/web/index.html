@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>hali</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="nav">
+    <div class="brand">
+      <div>
+        <div class="brand-name">hali</div>
+        <div class="brand-sub">Model Cache</div>
+      </div>
+    </div>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="?tab=status" class="nav-link active" data-tab="Status" onclick="setActive(event, 'Status')">Status <span id="badge-status" class="tab-badge" hidden></span></a></li>
+        <li><a href="?tab=downloads" class="nav-link" data-tab="Downloads" onclick="setActive(event, 'Downloads')">Downloads <span id="badge-downloads" class="tab-badge" hidden></span></a></li>
+        <li><a href="?tab=lan" class="nav-link" data-tab="LAN" onclick="setActive(event, 'LAN')">LAN <span id="badge-lan" class="tab-badge" hidden></span></a></li>
+        <li><a href="?tab=activity" class="nav-link" data-tab="Activity" onclick="setActive(event, 'Activity')">Activity <span id="badge-activity" class="tab-badge" hidden></span></a></li>
+        <li><a href="?tab=settings" class="nav-link" data-tab="Settings" onclick="setActive(event, 'Settings')">Settings</a></li>
+      </ul>
+    </nav>
+    <div class="live-chip"><div class="live-dot"></div>Live</div>
+  </header>
+
+  <!-- Managed-by-org banner — shown only when HKLM policy is active -->
+  <div id="managed-banner" style="display:none" class="managed-banner">
+    Some settings are controlled by your organization.
+  </div>
+
+  <!-- Security panel — always visible -->
+  <div id="sharing-controls" class="security-panel security-panel-subtle" hidden>
+    <div>
+      <div class="sp-title">Transfer controls</div>
+      <div class="sp-note">Pause transfers for a fixed time when you need the machine idle.</div>
+      <div class="toggle-row">
+        <button id="resume-btn" class="toggle-btn" data-pause-control="1" onclick="resumeNow(event)" hidden>Resume</button>
+      </div>
+      <div class="sp-title" style="margin-top:10px">Pause transfers for</div>
+      <div id="pause-menu" class="pause-menu">
+        <button class="mini-btn" data-pause-control="1" onclick="pauseFor(event, 15)">15m</button>
+        <button class="mini-btn" data-pause-control="1" onclick="pauseFor(event, 30)">30m</button>
+        <button class="mini-btn" data-pause-control="1" onclick="pauseFor(event, 60)">1h</button>
+        <button class="mini-btn" data-pause-control="1" onclick="pauseFor(event, 120)">2h</button>
+      </div>
+      <div id="pause-note" class="sp-note">Only Hugging Face verified model data is shared.</div>
+    </div>
+  </div>
+
+  <!-- Main content area — polled fragment loads here -->
+  <main id="main">
+  </main>
+
+</div>
+<script>
+var _policyData = null;
+var _currentTab = '';
+var _lastActivitySeen = 0;
+var _activityUnread = 0;
+var _tabPollTimer = null;
+var _knownTabs = {
+  'status': 'Status',
+  'downloads': 'Downloads',
+  'lan': 'LAN',
+  'activity': 'Activity',
+  'settings': 'Settings'
+};
+
+function loadPolicy() {
+  fetch('/api/policy').then(function(r) { return r.json(); }).then(function(data) {
+    _policyData = data;
+    if (data.managed) {
+      document.getElementById('managed-banner').style.display = '';
+    }
+    if (data.locked_fields && data.locked_fields['allow_user_pause']) {
+      var pauseControls = document.querySelectorAll('[data-pause-control="1"]');
+      pauseControls.forEach(function(btn) {
+        btn.disabled = true;
+        btn.title = 'Controlled by your organization';
+      });
+    }
+    applyPolicyLocks();
+  }).catch(function() {});
+}
+
+function applyPolicyLocks() {
+  if (!_policyData || !_policyData.locked_fields) return;
+  var locked = _policyData.locked_fields;
+  Object.keys(locked).forEach(function(field) {
+    if (!locked[field]) return;
+    var inputs = document.querySelectorAll('input[name="' + field + '"]');
+    inputs.forEach(function(inp) {
+      inp.disabled = true;
+      inp.title = 'Controlled by your organization';
+      var label = inp.closest('label');
+      if (label && !label.querySelector('.lock-note')) {
+        var note = document.createElement('span');
+        note.className = 'lock-note';
+        note.textContent = ' (managed)';
+        label.appendChild(note);
+      }
+    });
+  });
+}
+
+// Re-apply locks after HTMX loads any fragment (e.g. settings tab).
+document.addEventListener('htmx:afterSettle', applyPolicyLocks);
+
+function setActive(event, tab) {
+  setActiveInternal(event, tab, {});
+}
+
+function normalizeTab(tab) {
+  if (!tab) return 'Status';
+  var key = String(tab).trim().toLowerCase();
+  return _knownTabs[key] || 'Status';
+}
+
+function tabToQueryValue(tab) {
+  if (!tab) return 'status';
+  return String(tab).trim().toLowerCase();
+}
+
+function tabFromURL() {
+  try {
+    var u = new URL(window.location.href);
+    return normalizeTab(u.searchParams.get('tab'));
+  } catch (_) {
+    return 'Status';
+  }
+}
+
+function syncTabQuery(tab, replace) {
+  try {
+    var u = new URL(window.location.href);
+    u.searchParams.set('tab', tabToQueryValue(tab));
+    var rel = u.pathname + u.search + u.hash;
+    if (replace) {
+      window.history.replaceState({ tab: tab }, '', rel);
+    } else {
+      window.history.pushState({ tab: tab }, '', rel);
+    }
+  } catch (_) {}
+}
+
+function setActiveInternal(event, tab, options) {
+  if (event) event.preventDefault();
+  options = options || {};
+  var nextTab = normalizeTab(tab);
+
+  if (nextTab === _currentTab && !options.forceReload) {
+    if (!options.skipURL) {
+      syncTabQuery(nextTab, !!options.replaceURL);
+    }
+    return;
+  }
+
+  _currentTab = nextTab;
+
+  document.querySelectorAll('.nav-link').forEach(function(a) {
+    var isActive = a.getAttribute('data-tab') === nextTab;
+    a.classList.toggle('active', isActive);
+  });
+
+  if (!options.skipURL) {
+    syncTabQuery(nextTab, !!options.replaceURL);
+  }
+
+  if (_currentTab === 'Activity') {
+    _activityUnread = 0;
+    setTabBadge('activity', 0);
+  }
+
+  updateSharingControlsVisibility();
+
+  loadCurrentTab(!!options.forceReload);
+  configureTabPolling();
+}
+
+function updateSharingControlsVisibility() {
+  var controls = document.getElementById('sharing-controls');
+  if (!controls) return;
+  controls.hidden = (_currentTab !== 'Settings');
+}
+
+function fragmentPathFor(tab) {
+  if (tab === 'Status') return '/fragments/status';
+  if (tab === 'Downloads') return '/fragments/downloads';
+  if (tab === 'LAN') return '/fragments/lan';
+  if (tab === 'Activity') return '/fragments/activity';
+  if (tab === 'Settings') return '/fragments/settings';
+  return '/fragments/status';
+}
+
+function loadCurrentTab(forceReload) {
+  var main = document.getElementById('main');
+  var path = fragmentPathFor(_currentTab);
+  fetch(path, { headers: { 'HX-Request': 'true' } }).then(function(r) { return r.text(); }).then(function(html) {
+    if (!forceReload && main.innerHTML === html) {
+      return;
+    }
+    main.innerHTML = html;
+    if (window.htmx) {
+      htmx.process(main);
+    }
+    applyPolicyLocks();
+  }).catch(function() {});
+}
+
+function configureTabPolling() {
+  if (_tabPollTimer) {
+    clearInterval(_tabPollTimer);
+    _tabPollTimer = null;
+  }
+  var everyMs = 0;
+  if (_currentTab === 'Status' || _currentTab === 'Downloads') {
+    everyMs = 3000;
+  } else if (_currentTab === 'LAN') {
+    everyMs = 5000;
+  } else if (_currentTab === 'Activity') {
+    everyMs = 4000;
+  }
+  if (everyMs > 0) {
+    _tabPollTimer = setInterval(loadCurrentTab, everyMs);
+  }
+}
+
+function setTabBadge(name, count) {
+  var badge = document.getElementById('badge-' + name);
+  if (!badge) return;
+  if (!count || count < 1) {
+    badge.hidden = true;
+    badge.textContent = '';
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = count > 99 ? '99+' : String(count);
+}
+
+function copyFromAttr(btn) {
+  var value = btn.getAttribute('data-copy') || '';
+  if (!value) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value).then(function() {
+      copyFeedback(btn);
+    }).catch(function() {
+      fallbackCopy(value, btn);
+    });
+    return;
+  }
+  fallbackCopy(value, btn);
+}
+
+function fallbackCopy(text, btn) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', 'readonly');
+  ta.style.position = 'absolute';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  copyFeedback(btn);
+}
+
+function copyFeedback(btn) {
+  var prev = btn.textContent;
+  btn.textContent = 'Copied';
+  setTimeout(function() {
+    btn.textContent = prev;
+  }, 900);
+}
+
+function applyPauseState(paused) {
+  var resumeBtn = document.getElementById('resume-btn');
+  var note = document.getElementById('pause-note');
+  var menu = document.getElementById('pause-menu');
+  if (!resumeBtn || !note || !menu) return;
+  if (paused) {
+    resumeBtn.hidden = false;
+    resumeBtn.classList.add('active');
+    menu.hidden = true;
+  } else {
+    resumeBtn.hidden = true;
+    resumeBtn.classList.remove('active');
+    menu.hidden = false;
+    note.textContent = 'Only Hugging Face verified model data is shared.';
+  }
+}
+
+function renderPauseNote(untilUnix) {
+  var note = document.getElementById('pause-note');
+  if (!note) return;
+  if (!untilUnix) {
+    note.textContent = 'Transfers are paused until you resume.';
+    return;
+  }
+  var d = new Date(untilUnix * 1000);
+  note.textContent = 'Transfers paused until ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.';
+}
+
+function refreshPauseState() {
+  fetch('/api/pause-state').then(function(r) { return r.json(); }).then(function(data) {
+    applyPauseState(!!data.paused);
+    if (data.paused) {
+      renderPauseNote(data.pause_until || 0);
+    }
+  }).catch(function() {});
+}
+
+function resumeNow(event) {
+  event.preventDefault();
+  fetch('/api/resume', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(data) {
+    applyPauseState(!!data.paused);
+  }).catch(function() {});
+}
+
+function pauseFor(event, minutes) {
+  event.preventDefault();
+  var menu = document.getElementById('pause-menu');
+  if (menu) menu.hidden = true;
+  fetch('/api/pause', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes: minutes })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    applyPauseState(!!data.paused);
+    renderPauseNote(data.pause_until || 0);
+  }).catch(function() {});
+}
+
+function pollTabBadges() {
+  fetch('/api/stats').then(function(r) { return r.json(); }).then(function(stats) {
+    var downloads = stats.active_downloads || 0;
+    if (_currentTab === 'Downloads') {
+      setTabBadge('downloads', 0);
+    } else {
+      setTabBadge('downloads', downloads);
+    }
+  }).catch(function() {});
+
+  fetch('/api/activity').then(function(r) { return r.json(); }).then(function(events) {
+    var latest = 0;
+    for (var i = 0; i < events.length; i++) {
+      var t = Date.parse(events[i].ts || '');
+      if (!isNaN(t) && t > latest) latest = t;
+    }
+    if (_lastActivitySeen === 0) {
+      _lastActivitySeen = latest;
+      return;
+    }
+    if (latest > _lastActivitySeen && _currentTab !== 'Activity') {
+      _activityUnread += 1;
+      setTabBadge('activity', _activityUnread);
+      _lastActivitySeen = latest;
+      return;
+    }
+    if (_currentTab === 'Activity') {
+      _activityUnread = 0;
+      setTabBadge('activity', 0);
+      _lastActivitySeen = latest;
+    }
+  }).catch(function() {});
+
+  refreshPauseState();
+}
+
+loadPolicy();
+refreshPauseState();
+setActiveInternal(null, tabFromURL(), { replaceURL: true, forceReload: true });
+window.addEventListener('popstate', function() {
+  setActiveInternal(null, tabFromURL(), { skipURL: true, forceReload: true });
+});
+setInterval(pollTabBadges, 5000);
+</script>
+</body>
+</html>

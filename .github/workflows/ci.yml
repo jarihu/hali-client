@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Guard: OSS repo must never import enterprise packages.
+  oss-isolation:
+    name: OSS isolation check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: No enterprise package references
+        run: |
+          if grep -r "hali-enterprise" --include="*.go" .; then
+            echo "ERROR: OSS repo must not reference hali-enterprise"
+            exit 1
+          fi
+          if grep -r "internal/enterprise" --include="*.go" .; then
+            echo "ERROR: OSS repo must not reference internal/enterprise"
+            exit 1
+          fi
+          echo "OSS isolation check passed"
+
+  test:
+    name: Test (Go ${{ matrix.go-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        go-version: ["1.26"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Vet (OSS)
+        run: go vet -tags oss ./...
+
+      - name: Test (OSS)
+        run: go test -tags oss -race -count=1 ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: gofmt check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build
+        run: go build -tags oss -ldflags "-X hali/internal/buildinfo.Version=ci -X hali/internal/buildinfo.Commit=${{ github.sha }} -X hali/internal/buildinfo.BuildMode=release -X hali/internal/buildinfo.Edition=oss" -o bin/hali .
+
+      - name: Build daemon
+        run: go build -tags oss -ldflags "-X hali/internal/buildinfo.Version=ci -X hali/internal/buildinfo.Commit=${{ github.sha }} -X hali/internal/buildinfo.BuildMode=release -X hali/internal/buildinfo.Edition=oss" -o bin/halid ./cmd/service

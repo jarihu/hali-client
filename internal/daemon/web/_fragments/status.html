@@ -1,0 +1,65 @@
+<div id="status-fragment">
+  <div class="stat-grid">
+    <div class="card card-cyan">
+      <div class="card-label">↓ Download</div>
+      <div class="card-val">{{.DownSpeed}}</div>
+    </div>
+    <div class="card card-green">
+      <div class="card-label">↑ Upload</div>
+      <div class="card-val">{{.UpSpeed}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">↓ Session</div>
+      <div class="card-val">{{.TotalDown}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">↑ Session</div>
+      <div class="card-val">{{.TotalUp}}</div>
+    </div>
+    <div class="card card-amber">
+      <div class="card-label">Seeding</div>
+      <div class="card-val">{{.Seeds}}</div>
+    </div>
+    <div class="card card-cyan">
+      <div class="card-label">Downloading</div>
+      <div class="card-val">{{.Downloads}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Tracked Models</div>
+      <div class="card-val">{{.Models}}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">State</div>
+      <div class="card-val">{{.State}}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Currently seeding</div>
+    </div>
+    <div class="section-note">This view summarizes live transfer activity and which models are available for others to fetch from this machine.</div>
+    <div class="table-box">
+      <table class="models-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Peers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{if .Seeding}}
+            {{range .Seeding}}
+            <tr>
+              <td><div class="model-id">{{.ModelID}}</div></td>
+              <td class="peers-cell {{if eq .Peers 0}}peers-zero{{end}}">{{.Peers}}</td>
+            </tr>
+            {{end}}
+          {{else}}
+          <tr class="empty-state"><td colspan="2">No models are currently seeding.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

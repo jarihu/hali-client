@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX v4 MSI installer for Hali.
+
+  Key invariants:
+  - UpgradeCode GUID is fixed and MUST NEVER be changed across versions.
+  - Component GUIDs for user data (cache, config.json) are fixed and MUST NEVER be regenerated.
+  - Permanent="yes" on user-data components prevents WiX reference-counting from deleting them.
+  - %ProgramData%\Hali\ directory structure MUST NOT change between versions.
+  - Service recovery policy: 5s → 30s → 60s restart delays.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package
+    Name="Hali"
+    Manufacturer="Hali Project"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="3A7F2B14-C8D9-4E0A-A1B3-5F6C7D8E9F10"
+    Scope="perMachine"
+    InstallerVersion="500">
+
+    <!-- Upgrade behavior: replace older versions, block downgrades -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Hali is already installed."
+      Schedule="afterInstallInitialize" />
+
+    <!-- Install root: C:\Program Files\Hali\ -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Hali">
+
+        <!-- Main binaries -->
+        <Component Id="CompHalid" Guid="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}">
+          <File Id="halid" Source="$(var.BinDir)\halid.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="CompHali" Guid="{B2C3D4E5-F6A7-8901-BCDE-F12345678901}">
+          <File Id="hali" Source="$(var.BinDir)\hali.exe" />
+        </Component>
+        <Component Id="CompTray" Guid="{C3D4E5F6-A7B8-9012-CDEF-123456789012}">
+          <File Id="hali_tray" Source="$(var.BinDir)\hali-tray.exe" />
+        </Component>
+
+        <!-- hali:// URL protocol handler; per-machine scope provides admin elevation for HKCR writes -->
+        <Component Id="CompUrlProtocol" Guid="{E1F2A3B4-C5D6-7890-ABCD-EF1234567891}">
+          <RegistryValue Root="HKCR" Key="hali"
+                         Type="string" Value="URL:Hali Protocol" KeyPath="yes" />
+          <RegistryValue Root="HKCR" Key="hali"
+                         Name="URL Protocol" Type="string" Value="" />
+          <RegistryValue Root="HKCR" Key="hali\DefaultIcon"
+                         Type="string" Value="[INSTALLFOLDER]hali.exe,0" />
+          <RegistryValue Root="HKCR" Key="hali\shell\open\command"
+                         Type="string"
+                         Value="&quot;[INSTALLFOLDER]hali.exe&quot; open &quot;%1&quot;" />
+        </Component>
+
+        <!-- Windows Service registration for halid.exe -->
+        <Component Id="CompService" Guid="{D4E5F6A7-B8C9-0123-DEF0-234567890123}">
+          <ServiceInstall
+            Id="HaliDaemonSvc"
+            Name="HaliDaemon"
+            DisplayName="Hali Model Cache Service"
+            Description="Manages the Hali model cache and torrent seeding."
+            Type="ownProcess"
+            Start="auto"
+            ErrorControl="normal"
+            Account="LocalSystem" />
+          <ServiceControl
+            Id="HaliDaemonSvcCtrl"
+            Name="HaliDaemon"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
+          <!-- Recovery policy: restart 5s, 30s, 60s -->
+          <util:ServiceConfig
+            ServiceName="HaliDaemon"
+            FirstFailureActionType="restart"
+            SecondFailureActionType="restart"
+            ThirdFailureActionType="restart"
+            RestartServiceDelayInSeconds="5"
+            ResetPeriodInDays="1" />
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <!-- %ProgramData%\Hali\ — data directories created on install, preserved on uninstall -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="HALI_DATA" Name="Hali">
+
+        <!-- Cache directory: Permanent="yes" + fixed GUID = NEVER deleted by installer -->
+        <Directory Id="HALI_CACHE" Name="cache">
+          <Component Id="CompCacheDir"
+                     Guid="{E5F6A7B8-C9D0-1234-EF01-345678901234}"
+                     Permanent="yes">
+            <CreateFolder />
+          </Component>
+        </Directory>
+
+        <!-- Logs directory -->
+        <Directory Id="HALI_LOGS" Name="logs">
+          <Component Id="CompLogsDir" Guid="{F6A7B8C9-D0E1-2345-F012-456789012345}">
+            <CreateFolder />
+          </Component>
+        </Directory>
+
+        <!-- Torrents directory -->
+        <Directory Id="HALI_TORRENTS" Name="torrents">
+          <Component Id="CompTorrentsDir" Guid="{A7B8C9D0-E1F2-3456-0123-567890123456}">
+            <CreateFolder />
+          </Component>
+        </Directory>
+
+        <!-- config.json: Permanent="yes" ensures it is never removed on uninstall.
+             TODO (before v0.2.0): add WiX 7 util:FileSearch + Component Condition to skip
+             this component when the file already exists, so user edits survive major upgrades.
+             For v0.1.0 there is no upgrade path, so this is safe. -->
+        <Component Id="CompConfig"
+                   Guid="{B8C9D0E1-F2A3-4567-1234-678901234567}"
+                   Permanent="yes">
+          <File Id="config_json"
+                Source="$(sys.SOURCEFILEDIR)config.default.json"
+                Name="config.json" />
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu shortcut to tray app -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="HaliStartMenu" Name="Hali">
+        <Component Id="CompStartMenu" Guid="{C9D0E1F2-A3B4-5678-2345-789012345678}">
+          <Shortcut Id="HaliShortcut"
+                    Name="Hali"
+                    Description="Hali model cache manager"
+                    Target="[INSTALLFOLDER]hali-tray.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveHaliStartMenu" On="uninstall" />
+          <RegistryValue Root="HKCU"
+                         Key="Software\Hali"
+                         Name="StartMenu"
+                         Value="1"
+                         Type="integer"
+                         KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Add install dir to system PATH so 'hali' works from any terminal -->
+    <Component Id="CompPath" Guid="{F1A2B3C4-D5E6-7890-ABCD-EF1234567892}" Directory="INSTALLFOLDER">
+      <Environment
+        Id="UpdatePath"
+        Name="PATH"
+        Action="set"
+        Part="last"
+        Value="[INSTALLFOLDER]"
+        Permanent="no"
+        System="yes" />
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\Hali"
+        Name="PathAdded"
+        Value="1"
+        Type="integer"
+        KeyPath="yes" />
+    </Component>
+
+    <!-- Run at login: add tray app to HKCU Run -->
+    <Component Id="CompStartupRun" Guid="{D0E1F2A3-B4C5-6789-3456-890123456789}" Directory="INSTALLFOLDER">
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\Microsoft\Windows\CurrentVersion\Run"
+        Name="HaliTray"
+        Value="[INSTALLFOLDER]hali-tray.exe"
+        Type="string"
+        KeyPath="yes" />
+    </Component>
+
+    <!-- Feature set -->
+    <Feature Id="Complete" Title="Hali" Level="1">
+      <ComponentRef Id="CompHalid" />
+      <ComponentRef Id="CompHali" />
+      <ComponentRef Id="CompTray" />
+      <ComponentRef Id="CompService" />
+      <ComponentRef Id="CompCacheDir" />
+      <ComponentRef Id="CompLogsDir" />
+      <ComponentRef Id="CompTorrentsDir" />
+      <ComponentRef Id="CompConfig" />
+      <ComponentRef Id="CompStartMenu" />
+      <ComponentRef Id="CompStartupRun" />
+      <ComponentRef Id="CompUrlProtocol" />
+      <ComponentRef Id="CompPath" />
+    </Feature>
+
+    <!-- Single-page installer UI -->
+    <ui:WixUI Id="WixUI_Minimal" />
+
+  </Package>
+</Wix>

@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hali Model Cache — Group Policy ADMX definition
+  Registry root: HKLM\SOFTWARE\Policies\Hali\
+
+  Deployment:
+    1. Copy hali.admx to C:\Windows\PolicyDefinitions\
+    2. Copy en-US\hali.adml to C:\Windows\PolicyDefinitions\en-US\
+    Or upload both files to Intune > Configuration Profiles > ADMX Templates.
+-->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions"
+                   revision="1.0"
+                   schemaVersion="1.0">
+
+  <policyNamespaces>
+    <target prefix="hali" namespace="Hali.Policies.hali"/>
+    <using prefix="windows" namespace="Microsoft.Policies.Windows"/>
+  </policyNamespaces>
+
+  <resources minRequiredRevision="1.0"/>
+
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_Hali_1_0" displayName="$(string.SUPPORTED_Hali_1_0)"/>
+    </definitions>
+  </supportedOn>
+
+  <categories>
+    <category name="Hali" displayName="$(string.Hali)">
+      <parentCategory ref="windows:WindowsComponents"/>
+    </category>
+    <category name="HaliNetwork"  displayName="$(string.HaliNetwork)"  parentCategory="hali:Hali"/>
+    <category name="HaliFeatures" displayName="$(string.HaliFeatures)" parentCategory="hali:Hali"/>
+    <category name="HaliControls" displayName="$(string.HaliControls)" parentCategory="hali:Hali"/>
+  </categories>
+
+  <policies>
+
+    <!-- ── Network ──────────────────────────────────────────────────────── -->
+
+    <policy name="EnableLanSeeding"
+            class="Machine"
+            displayName="$(string.EnableLanSeeding)"
+            explainText="$(string.EnableLanSeeding_Explain)"
+            key="SOFTWARE\Policies\Hali\Network"
+            valueName="EnableLanSeeding">
+      <parentCategory ref="hali:HaliNetwork"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="MaxUploadKBps"
+            class="Machine"
+            displayName="$(string.MaxUploadKBps)"
+            explainText="$(string.MaxUploadKBps_Explain)"
+            key="SOFTWARE\Policies\Hali\Network">
+      <parentCategory ref="hali:HaliNetwork"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <elements>
+        <decimal id="MaxUploadKBpsValue" valueName="MaxUploadKBps" minValue="0" maxValue="1048576"/>
+      </elements>
+    </policy>
+
+    <policy name="AllowWifiSeeding"
+            class="Machine"
+            displayName="$(string.AllowWifiSeeding)"
+            explainText="$(string.AllowWifiSeeding_Explain)"
+            key="SOFTWARE\Policies\Hali\Network"
+            valueName="AllowWifiSeeding">
+      <parentCategory ref="hali:HaliNetwork"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="AllowVpnSeeding"
+            class="Machine"
+            displayName="$(string.AllowVpnSeeding)"
+            explainText="$(string.AllowVpnSeeding_Explain)"
+            key="SOFTWARE\Policies\Hali\Network"
+            valueName="AllowVpnSeeding">
+      <parentCategory ref="hali:HaliNetwork"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="AdaptiveThrottling"
+            class="Machine"
+            displayName="$(string.AdaptiveThrottling)"
+            explainText="$(string.AdaptiveThrottling_Explain)"
+            key="SOFTWARE\Policies\Hali\Network"
+            valueName="AdaptiveThrottling">
+      <parentCategory ref="hali:HaliNetwork"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <!-- ── Features ─────────────────────────────────────────────────────── -->
+
+    <policy name="MulticastEnabled"
+            class="Machine"
+            displayName="$(string.MulticastEnabled)"
+            explainText="$(string.MulticastEnabled_Explain)"
+            key="SOFTWARE\Policies\Hali\Features"
+            valueName="MulticastEnabled">
+      <parentCategory ref="hali:HaliFeatures"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="TorrentEnabled"
+            class="Machine"
+            displayName="$(string.TorrentEnabled)"
+            explainText="$(string.TorrentEnabled_Explain)"
+            key="SOFTWARE\Policies\Hali\Features"
+            valueName="TorrentEnabled">
+      <parentCategory ref="hali:HaliFeatures"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <!-- ── Controls ─────────────────────────────────────────────────────── -->
+
+    <policy name="AllowUserPause"
+            class="Machine"
+            displayName="$(string.AllowUserPause)"
+            explainText="$(string.AllowUserPause_Explain)"
+            key="SOFTWARE\Policies\Hali\Controls"
+            valueName="AllowUserPause">
+      <parentCategory ref="hali:HaliControls"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="MaxPauseMinutes"
+            class="Machine"
+            displayName="$(string.MaxPauseMinutes)"
+            explainText="$(string.MaxPauseMinutes_Explain)"
+            key="SOFTWARE\Policies\Hali\Controls">
+      <parentCategory ref="hali:HaliControls"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <elements>
+        <decimal id="MaxPauseMinutesValue" valueName="MaxPauseMinutes" minValue="0" maxValue="1440"/>
+      </elements>
+    </policy>
+
+    <policy name="AllowFocusMode"
+            class="Machine"
+            displayName="$(string.AllowFocusMode)"
+            explainText="$(string.AllowFocusMode_Explain)"
+            key="SOFTWARE\Policies\Hali\Controls"
+            valueName="AllowFocusMode">
+      <parentCategory ref="hali:HaliControls"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="AllowUserChangeBandwidth"
+            class="Machine"
+            displayName="$(string.AllowUserChangeBandwidth)"
+            explainText="$(string.AllowUserChangeBandwidth_Explain)"
+            key="SOFTWARE\Policies\Hali\Controls"
+            valueName="AllowUserChangeBandwidth">
+      <parentCategory ref="hali:HaliControls"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+    <policy name="AllowUserChangeLan"
+            class="Machine"
+            displayName="$(string.AllowUserChangeLan)"
+            explainText="$(string.AllowUserChangeLan_Explain)"
+            key="SOFTWARE\Policies\Hali\Controls"
+            valueName="AllowUserChangeLan">
+      <parentCategory ref="hali:HaliControls"/>
+      <supportedOn ref="hali:SUPPORTED_Hali_1_0"/>
+      <enabledValue><decimal value="1"/></enabledValue>
+      <disabledValue><decimal value="0"/></disabledValue>
+    </policy>
+
+  </policies>
+
+</policyDefinitions>
+

@@ -1,0 +1,22 @@
+<div id="settings-fragment">
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Resource limits</div>
+    </div>
+    <div class="section-note">Set upload and download ceilings in MB/s. Higher values are normal on fast LANs, and 0 means unlimited.</div>
+    <form class="settings-form"
+          hx-post="/api/settings"
+          hx-swap="none">
+      <label>
+        Max upload speed (MB/s, 0 = unlimited)
+        <input name="max_upload_mbps" type="number" min="0" step="0.1" value="{{.MaxUploadMBps}}">
+      </label>
+      <label>
+        Max download speed (MB/s, 0 = unlimited)
+        <input name="max_download_mbps" type="number" min="0" step="0.1" value="{{.MaxDownloadMBps}}">
+      </label>
+      <div class="sp-note">Typical values: 1 Gbps ≈ 122 MB/s, 2.5 Gbps ≈ 305 MB/s, 10 Gbps ≈ 1220 MB/s.</div>
+      <button type="submit">Save settings</button>
+    </form>
+  </div>
+</div>

@@ -1,0 +1,191 @@
+package protocol
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParse_Valid(t *testing.T) {
+	cases := []struct {
+		raw       string
+		namespace string
+		name      string
+		version   string
+		repoID    string
+		revision  string
+	}{
+		{
+			raw:       "hali://model/Qwen/Qwen3-32B",
+			namespace: "Qwen", name: "Qwen3-32B", version: "",
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
+			raw:       "hali://model/Qwen/Qwen3-32B?version=latest",
+			namespace: "Qwen", name: "Qwen3-32B", version: "latest",
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
+			raw:       "hali://model/TheBloke/Mistral-7B-Instruct-v0.2-GGUF?version=abc1234567890123456789012345678901234567",
+			namespace: "TheBloke", name: "Mistral-7B-Instruct-v0.2-GGUF",
+			version:  "abc1234567890123456789012345678901234567",
+			repoID:   "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+			revision: "abc1234567890123456789012345678901234567",
+		},
+		{
+			raw:       "hali://model/meta-llama/Meta-Llama-3-8B?version=v1.0",
+			namespace: "meta-llama", name: "Meta-Llama-3-8B", version: "v1.0",
+			repoID: "meta-llama/Meta-Llama-3-8B", revision: "v1.0",
+		},
+		{
+			// Scheme case-insensitive
+			raw:       "HALI://model/Qwen/Qwen3-32B",
+			namespace: "Qwen", name: "Qwen3-32B", version: "",
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
+			// Host case-insensitive
+			raw:       "hali://MODEL/Qwen/Qwen3-32B",
+			namespace: "Qwen", name: "Qwen3-32B", version: "",
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
+			// Unknown query params are accepted
+			raw:       "hali://model/Qwen/Qwen3-32B?version=latest&unknown=ignored",
+			namespace: "Qwen", name: "Qwen3-32B", version: "latest",
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			h, err := Parse(tc.raw)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if h.Namespace != tc.namespace {
+				t.Errorf("namespace: got %q, want %q", h.Namespace, tc.namespace)
+			}
+			if h.Name != tc.name {
+				t.Errorf("name: got %q, want %q", h.Name, tc.name)
+			}
+			if h.Version != tc.version {
+				t.Errorf("version: got %q, want %q", h.Version, tc.version)
+			}
+			if h.RepositoryID() != tc.repoID {
+				t.Errorf("RepositoryID: got %q, want %q", h.RepositoryID(), tc.repoID)
+			}
+			if h.Revision() != tc.revision {
+				t.Errorf("Revision: got %q, want %q", h.Revision(), tc.revision)
+			}
+		})
+	}
+}
+
+func TestParse_InvalidScheme(t *testing.T) {
+	cases := []string{
+		"http://model/Qwen/Qwen3-32B",
+		"https://model/Qwen/Qwen3-32B",
+		"hali2://model/Qwen/Qwen3-32B",
+		"ftp://model/Qwen/Qwen3-32B",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatal("expected error for invalid scheme")
+			}
+		})
+	}
+}
+
+func TestParse_InvalidAction(t *testing.T) {
+	cases := []string{
+		"hali://exec/cmd",
+		"hali://run/script",
+		"hali://download/foo/bar",
+		"hali://install/foo/bar",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatal("expected error for invalid action")
+			}
+		})
+	}
+}
+
+func TestParse_PathTraversal(t *testing.T) {
+	cases := []string{
+		"hali://model/foo/%2e%2e/bar",
+		"hali://model/../evil",
+		"hali://model/foo/%2F%2e%2e%2Fbar/baz",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatal("expected error for path traversal")
+			}
+		})
+	}
+}
+
+func TestParse_EmptySegments(t *testing.T) {
+	cases := []string{
+		"hali://model//bar",
+		"hali://model/foo/",
+		"hali://model/",
+		"hali://model",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatalf("expected error for empty segment in %q", raw)
+			}
+		})
+	}
+}
+
+func TestParse_BadCharset(t *testing.T) {
+	cases := []string{
+		"hali://model/foo bar/baz",
+		"hali://model/foo;rm/bar",
+		"hali://model/foo|bar/baz",
+		"hali://model/foo&bar/baz",
+		"hali://model/foo`bar/baz",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatalf("expected error for bad charset in %q", raw)
+			}
+		})
+	}
+}
+
+func TestParse_TooLong(t *testing.T) {
+	raw := "hali://model/Qwen/" + strings.Repeat("A", 2000)
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected error for URL > 2048 chars")
+	}
+}
+
+func TestParse_InvalidVersion(t *testing.T) {
+	cases := []string{
+		"hali://model/Qwen/Qwen3-32B?version=foo bar",
+		"hali://model/Qwen/Qwen3-32B?version=foo;rm",
+		"hali://model/Qwen/Qwen3-32B?version=" + strings.Repeat("a", 81),
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatalf("expected error for invalid version in %q", raw)
+			}
+		})
+	}
+}

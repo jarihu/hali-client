@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Hali
+Comment=AI Model Cache System
+Exec=/usr/bin/hali open %u
+Type=Application
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/hali;

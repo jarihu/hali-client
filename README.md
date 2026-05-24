@@ -1,0 +1,367 @@
+# hali
+
+Local-first model cache for LLMs with optional LAN P2P acceleration.
+
+**Download once. Share on your LAN. No account, no cloud, no central server.**
+
+Website: https://hali.network/
+
+hali downloads GGUF models from Hugging Face, caches them locally, and seeds completed
+downloads to other machines on your LAN via BitTorrent. Any machine running the daemon
+automatically discovers peers and accelerates downloads at LAN speed.
+
+## Why hali?
+
+- **Works offline after download** — models stay on your machine, always available
+- **LAN acceleration** — download once, every machine on the network gets it at LAN speed
+- **Zero configuration** — no accounts, no registries, no cloud dependencies
+- **Runs as a service** — Windows SCM or Linux systemd, starts on boot
+- **Exports to runtimes** — one-command export to Ollama and LM Studio
+- **Web dashboard** — live transfer stats and peer list at `http://127.0.0.1:47433`
+- **Privacy-first** — never phones home, all traffic is local or direct to Hugging Face
+
+## Quick start
+
+### Step 1 — Get a model (60 seconds to first value)
+
+```sh
+# Search Hugging Face for GGUF models — ranked by downloads, filtered to usable formats
+hali search mistral
+
+# Download interactively — hali lists matching variants, you pick one
+hali pull mistral
+
+# Or skip the prompt with a direct model ID or Hugging Face repo path
+hali pull mistral:7b:instruct:q4_k_m
+hali pull TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+```
+
+hali downloads the file from Hugging Face, hashes pieces in the background for immediate seeding,
+and saves it to the local cache. No account. No cloud sync. The model is on your disk.
+
+### Step 2 — See your cache and what's happening
+
+```sh
+# List every model in the local cache — name, size, download date
+hali list
+
+# Check the daemon: PID, uptime, what it's seeding, and any LAN peers it sees
+hali daemon status
+
+# Watch live download/upload speeds and per-model transfer breakdown in the terminal
+hali stats
+
+# Same view in your browser — auto-refreshes at http://127.0.0.1:47433
+hali stats --web
+```
+
+### Step 3 — Use the model in a runtime (optional)
+
+hali is a cache and distribution layer, not an inference engine. Export to a local runtime to run the model:
+
+```sh
+# See which runtimes are installed (Ollama, LM Studio) and where hali will write files
+hali runtime list
+
+# Create an Ollama manifest pointing at the cached GGUF — no file copy, instant
+hali export ollama mistral:7b:instruct:q4_k_m
+
+# Copy the GGUF into LM Studio's model directory
+hali export lmstudio mistral:7b:instruct:q4_k_m
+
+# Export to every detected runtime in one command
+hali export all mistral:7b:instruct:q4_k_m
+```
+
+After `hali export ollama`, run `ollama list` — the model appears immediately without re-downloading.
+
+### Step 4 — Keep the daemon running across reboots (optional)
+
+Without the service, `hali pull` auto-launches the daemon when needed and the daemon stops when
+you close the terminal. Install the OS service to keep it running permanently:
+
+```sh
+# Register with Windows SCM or Linux systemd — starts on boot, restarts on crash
+hali service install
+
+# Check whether the service is running
+hali service status
+
+# Start, stop, or restart manually
+hali service start
+hali service stop
+hali service restart
+
+# Remove the service registration (does not delete cached models)
+hali service uninstall
+```
+
+### Step 5 — Tune configuration
+
+```sh
+# Print every setting and the config file path
+hali config show
+
+# Common adjustments:
+hali config set max_upload_mbps 50        # Cap upload speed (0 = unlimited)
+hali config set max_download_mbps 200     # Cap download speed (0 = unlimited)
+hali config set debug true                # Enable verbose daemon logs
+hali config set models_dir /mnt/data      # Store models on a different drive
+```
+
+Changes take effect after restarting the daemon.
+
+### Step 6 — Telemetry (opt-in anonymous pull events)
+
+hali optionally reports anonymous model pull events to improve search ranking:
+
+```sh
+hali telemetry status    # Check current state (enabled/disabled)
+hali telemetry enable    # Opt in
+hali telemetry disable   # Opt out — queued events stay on disk but are never sent
+```
+
+### Step 7 — Publisher profile (advanced, optional)
+
+If you seed models to other users, create a signed profile to attribute your contributions:
+
+```sh
+# Interactive — prompts for display name, description, website, contact
+hali profile create
+
+# Or fully scripted for CI/automation
+hali profile create --display-name "My Lab" --description "Quantized models" \
+  --website https://example.com --non-interactive
+```
+
+The profile is signed with a local Ed25519 key unique to this machine and submitted to the registry.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `hali search <query>` | Search Hugging Face for GGUF models, ranked by downloads |
+| `hali pull <model>` | Download a model. Accepts search query, `owner/repo`, or `base:size:variant:quant` |
+| `hali list` | List all models in local cache with size and download date |
+| `hali profile create` | Prompt for publisher profile fields, sign locally, save to `<DataDir>/profile.json`, and submit to backend |
+| `hali export ollama <id>` | Create Ollama manifest for a cached model (idempotent, no file copies) |
+| `hali export lmstudio <id>` | Copy GGUF model into LM Studio's local model directory |
+| `hali export all <id>` | Export to all detected runtimes |
+| `hali runtime list` | Show detected local runtimes (Ollama, LM Studio) with status and paths |
+| `hali daemon start` | Launch daemon in background |
+| `hali daemon stop` | Stop the running daemon |
+| `hali daemon status` | Show PID, uptime, seeding list, LAN peers, magnet URIs |
+| `hali config show` | Show all effective daemon configuration values |
+| `hali config set <key> <value>` | Set a daemon configuration value (see supported keys below) |
+| `hali stats` | Show live transfer speeds and per-model breakdown |
+| `hali stats --web` | Open the live web dashboard in browser |
+| `hali service install` | Install and enable the OS service (SCM/systemd) |
+| `hali service uninstall` | Disable and remove the OS service |
+| `hali service start` | Start the OS service |
+| `hali service stop` | Stop the OS service |
+| `hali service restart` | Restart the OS service |
+| `hali service status` | Show service state |
+| `hali telemetry enable` | Enable pull-event telemetry delivery |
+| `hali telemetry disable` | Disable pull-event telemetry delivery |
+| `hali telemetry status` | Show current telemetry enabled/disabled state |
+| `hali version` | Print version, commit hash, and build mode |
+
+## Model ID format
+
+Canonical model IDs use the pattern `base:size:variant:quant`:
+
+```
+mistral:7b:instruct:q4_k_m
+llama:8b:instruct:q5_k_m
+codellama:13b:code:q4_k_m
+```
+
+`hali pull` derives this automatically from the Hugging Face repo and filename.
+
+## Storage layout
+
+### Windows
+
+```
+%ProgramData%\Hali\
+  config.json
+  logs\              hali.log
+  cache\             <base>\<size>-<variant>\<quant>\model.gguf + metadata.json
+  torrents\          <infohash>.torrent
+```
+
+### Linux / macOS
+
+```
+~/.hali/
+  config.json
+  logs\
+  cache\             ...
+  torrents\
+```
+
+### Linux service mode (systemd)
+
+```
+/var/lib/hali/     cache/, torrents/, models/
+/var/log/hali/
+/run/hali/
+```
+
+## Configuration
+
+**Config file:** `<DataDir>/config.json` (JSONC with comments)
+
+```json
+{
+  // Hash pieces while downloading for faster seeding handoff.
+  "streaming_hash": true,
+
+  // Verbose daemon diagnostics.
+  "debug": false,
+
+  // Share anonymous pull telemetry (recommended).
+  "telemetry_enabled": true,
+  "registry_ingest_url": "https://api.hali.network/ingest",
+
+  // LAN announcement HMAC auth (shared-secret).
+  "lan_hmac_enabled": false,
+  "lan_hmac_shared_secret": "",
+
+  "models_dir": "/custom/path/to/models",
+  "lmstudio_models_dir": "/path/to/lmstudio/models",
+  "ollama_models_dir": "/path/to/ollama/models",
+  "daemon_listen_addr": "0.0.0.0"
+}
+```
+
+The CLI now materializes this file on first run so defaults are always visible
+and editable.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `streaming_hash` | bool | Enable concurrent piece hashing during HF downloads |
+| `debug` | bool | Enable verbose daemon diagnostics (LAN announcement accept/reject logs) |
+| `telemetry_enabled` | bool | Enable pull-event telemetry delivery (default: `true`) |
+| `registry_ingest_url` | string | Telemetry ingest endpoint |
+| `lan_hmac_enabled` | bool | Require HMAC signatures for LAN multicast announcements (default: `false`) |
+| `lan_hmac_shared_secret` | string | 64-char hex shared secret used for LAN HMAC auth |
+| `models_dir` | string | Custom model storage path (overrides default) |
+| `lmstudio_models_dir` | string | LM Studio model directory override |
+| `ollama_models_dir` | string | Ollama model directory override |
+| `daemon_listen_addr` | string | Fixed to `0.0.0.0` |
+
+### `hali config set` supported keys
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `streaming_hash` | `true\|false` | Enable concurrent piece hashing during HF downloads |
+| `debug` | `true\|false` | Enable verbose daemon diagnostics |
+| `telemetry.enabled` | `true\|false` | Enable pull-event telemetry delivery |
+| `lan.hmac_enabled` | `true\|false` | Require HMAC signatures for LAN multicast announcements |
+| `lan.hmac_shared_secret` | 64-char hex or `default` | Shared secret for LAN HMAC auth |
+| `models_dir` | path or `default` | Custom model storage path |
+| `lmstudio_models_dir` | path or `default` | LM Studio model directory override |
+| `ollama_models_dir` | path or `default` | Ollama model directory override |
+| `max_upload_mbps` | integer (0 = unlimited) | Max upload speed in Mbps |
+| `max_download_mbps` | integer (0 = unlimited) | Max download speed in Mbps |
+
+### Environment variables
+
+Precedence: **env vars > config.json > built-in defaults**
+
+| Variable | Overrides |
+|----------|-----------|
+| `HALI_MODELS_DIR` | `config.json: models_dir` |
+| `ENABLE_STREAMING_HASH` | `config.json: streaming_hash` |
+| `LMSTUDIO_MODELS_DIR` | `config.json: lmstudio_models_dir` |
+| `OLLAMA_HOME` | `config.json: ollama_models_dir` |
+
+## LAN acceleration
+
+When the daemon is running, `hali pull` checks whether any machine on the LAN already
+has the model before downloading from Hugging Face. If found, the file is pulled from
+the local peer at LAN speed instead.
+
+Requirements:
+- UDP multicast reachable on `239.192.42.1:4269`
+- `hali daemon start` running on at least one machine that has the model
+
+LAN discovery uses dual-path announcements: IPv4 multicast (`239.192.42.1:4269`)
+plus directed subnet broadcast fallback on UDP `4269`.
+Multicast sending is automatic across all usable IPv4 LAN interfaces. This avoids
+the common Windows multi-adapter route issue where multicast is sent on a virtual
+adapter instead of the active LAN/Wi-Fi adapter.
+
+LAN is always optional — the system falls back to Hugging Face if no peers are found
+or multicast is unavailable.
+
+### LAN Troubleshooting (Peers Not Visible)
+
+If one machine can receive announcements but is not visible on another machine:
+
+1. Confirm the sender has at least one `seeding` entry in `hali daemon status`.
+2. Confirm both daemons use compatible LAN auth settings (`lan_hmac_enabled` and shared secret).
+3. Confirm host firewalls allow UDP `4269` inbound/outbound.
+4. Confirm both hosts are on the same L2 segment/VLAN (multicast is often blocked across routed segments).
+5. On Linux, verify packets arrive:
+
+```sh
+sudo tcpdump -ni any udp port 4269
+```
+
+If packets still do not arrive, the issue is network multicast policy (AP/router/switch),
+not hali state. hali will continue to work via direct Hugging Face fallback.
+
+## Telemetry ingest signing
+
+When telemetry ingest is enabled, the daemon sends signed publisher attribution
+with each pull event. The ingest payload includes both:
+
+- `publisher_pubkey` (64-char hex Ed25519 public key)
+- `publisher_sig` (128-char hex Ed25519 signature)
+
+The signature is generated over a canonical payload containing:
+`model_id`, `revision`, `infohash`, `magnet`, `source_url`, `local_hash`,
+`timestamp`, and `publisher_pubkey`.
+
+## Publisher profile signing
+
+`hali profile create` signs profiles using this fixed pipeline:
+
+1. Canonicalize `profile` JSON via the shared canonicalizer.
+2. Compute `SHA256(canonical_profile_bytes)`.
+3. Sign that hash with the local Ed25519 private key.
+
+This must stay consistent with backend profile verification logic.
+Do not introduce alternative canonicalizers in the CLI path.
+
+## Building from source
+
+```sh
+go build -o bin/hali .
+go build -o bin/halid ./cmd/service
+```
+
+On Windows, use the build script:
+
+```powershell
+.\build.ps1
+```
+
+Build outputs are written to edition-specific directories:
+
+```text
+bin\oss\
+```
+
+On Linux:
+
+```sh
+installer/linux/build-linux.sh
+```
+
+## OS-specific guides
+
+- [Windows setup (service, tray app, SCM)](README-windows.md)
+- [Linux setup (systemd, deb package, manual install, non-sudo group access)](README-linux.md)

@@ -1,0 +1,52 @@
+<div id="downloads-fragment">
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Downloads &amp; seeding</div>
+    </div>
+    <div class="section-note">Active downloads and seeded models are shown here, along with a shareable magnet link and copyable CLI command for each model.</div>
+    <div class="table-box">
+      <table class="models-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Status</th>
+            <th>&#x2193; Speed</th>
+            <th>&#x2191; Speed</th>
+            <th>Peers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{if .Models}}
+            {{range .Models}}
+            <tr>
+              <td>
+                <div class="model-id">{{.ModelID}}</div>
+                <div class="model-meta">Size {{.SizeStr}} | Traffic {{.TrafficStr}} | Pulled {{.PullsStr}} | Shared {{.SharedStr}}</div>
+                <div class="share-row">
+                  {{if .MagnetURI}}
+                  <a class="magnet-link" href="{{.MagnetURI}}">Magnet</a>
+                  <button class="mini-btn" data-copy="{{.MagnetURI}}" onclick="copyFromAttr(this)">Copy magnet</button>
+                  {{else}}
+                  <span class="mini-muted">Magnet pending</span>
+                  {{end}}
+                  <span class="cmd-inline">{{.ShareCommand}}</span>
+                  <button class="mini-btn" data-copy="{{.ShareCommand}}" onclick="copyFromAttr(this)">Copy command</button>
+                </div>
+                {{if eq .Status "downloading"}}
+                <div class="prog-track"><div class="prog-bar" style="width:{{.Progress}}%"></div></div>
+                {{end}}
+              </td>
+              <td><span class="badge badge-{{.Status}}"><span class="badge-dot"></span>{{.Status}}</span></td>
+              <td class="speed-dl">{{.DownSpeedStr}}</td>
+              <td class="speed-ul">{{.UpSpeedStr}}</td>
+              <td class="peers-cell {{if eq .Peers 0}}peers-zero{{end}}">{{.Peers}}</td>
+            </tr>
+            {{end}}
+          {{else}}
+          <tr class="empty-state"><td colspan="5">No active transfers.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,46 @@
+<section class="panel">
+  <div class="panel-title">LAN Observed Models</div>
+  <div class="panel-sub">Observational data from recent multicast announcements.</div>
+  <div class="panel-sub">Use this view to see which models other machines have announced on the network and how recently they were seen.</div>
+
+  {{if .Rows}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>Revision</th>
+        <th>Variant</th>
+        <th>Quant</th>
+        <th>Peers</th>
+        <th>Last Seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td>
+          <details>
+            <summary>{{.ModelID}}</summary>
+            <div class="hash-debug">
+              {{if .InfohashV2}}
+              <span class="hash-label">v2 (preferred):</span> <code>{{.InfohashV2}}</code><br>
+              {{end}}
+              {{if .InfohashV1}}
+              <span class="hash-label">v1 {{if .InfohashV2}}fallback{{else}}(only){{end}}:</span> <code>{{.InfohashV1}}</code>
+              {{end}}
+            </div>
+          </details>
+        </td>
+        <td>{{.Revision}}</td>
+        <td>{{.Variant}}</td>
+        <td>{{.Quant}}</td>
+        <td>{{.Peers}}</td>
+        <td>{{.LastSeen}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No recent LAN announcements observed.</div>
+  {{end}}
+</section>

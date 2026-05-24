@@ -1,0 +1,10 @@
+Package: hali
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Hali Maintainers <maintainers@hali.local>
+Depends: systemd
+Description: Hali local-first model cache daemon and CLI
+ Hali downloads and caches GGUF models locally and optionally seeds
+ them on the LAN through a background daemon.

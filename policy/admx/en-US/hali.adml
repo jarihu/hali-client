@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hali Model Cache — Group Policy language strings (en-US)
+  Deploy to: C:\Windows\PolicyDefinitions\en-US\hali.adml
+-->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                            xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions"
+                            revision="1.0"
+                            schemaVersion="1.0">
+
+  <displayName>Hali Model Cache</displayName>
+  <description>Administrative templates for the Hali AI model cache service.</description>
+
+  <resources>
+    <stringTable>
+
+      <!-- Supported-on strings -->
+      <string id="SUPPORTED_Hali_1_0">Hali 1.0 and later</string>
+
+      <!-- Category names -->
+      <string id="Hali">Hali Model Cache</string>
+      <string id="HaliNetwork">Network</string>
+      <string id="HaliFeatures">Features</string>
+      <string id="HaliControls">User Controls</string>
+
+      <!-- ── Network policies ──────────────────────────────────────────── -->
+
+      <string id="EnableLanSeeding">Enable LAN seeding</string>
+      <string id="EnableLanSeeding_Explain">
+Controls whether the Hali service seeds model files to peers on the local network.
+
+Enabled: LAN seeding is active (default).
+Disabled: LAN seeding is blocked regardless of user settings.
+Not configured: The user controls this setting.
+      </string>
+
+      <string id="MaxUploadKBps">Maximum upload speed (KB/s)</string>
+      <string id="MaxUploadKBps_Explain">
+Sets a ceiling on the upload bandwidth used by the Hali service, in kilobytes per second.
+
+Set to 0 for no ceiling (unlimited). Users may set a lower value but cannot exceed this ceiling.
+
+Not configured: No upload ceiling is enforced by policy.
+      </string>
+
+      <string id="AllowWifiSeeding">Allow seeding over Wi-Fi</string>
+      <string id="AllowWifiSeeding_Explain">
+Controls whether the Hali service seeds model files when the device is connected via Wi-Fi.
+
+Disabled: Seeding is blocked on Wi-Fi connections.
+Not configured: The user controls this setting.
+      </string>
+
+      <string id="AllowVpnSeeding">Allow seeding over VPN</string>
+      <string id="AllowVpnSeeding_Explain">
+Controls whether the Hali service seeds model files when the device is connected via a VPN adapter.
+
+Disabled: Seeding is blocked on VPN connections.
+Not configured: The user controls this setting.
+      </string>
+
+      <string id="AdaptiveThrottling">Enable adaptive throttling</string>
+      <string id="AdaptiveThrottling_Explain">
+Controls whether the Hali service dynamically reduces upload speed when the network is busy.
+
+Enabled: Upload is throttled automatically to avoid impacting other traffic.
+Disabled: Fixed upload limit applies (see Maximum upload speed).
+Not configured: The user controls this setting.
+      </string>
+
+      <!-- ── Features policies ─────────────────────────────────────────── -->
+
+      <string id="MulticastEnabled">Enable multicast LAN discovery</string>
+      <string id="MulticastEnabled_Explain">
+Controls whether the Hali service uses IPv4 multicast (239.192.42.1:4269) to discover peers on the local network.
+
+Disabled: Multicast is suppressed. LAN acceleration is unavailable.
+Not configured: Multicast is enabled by default.
+      </string>
+
+      <string id="TorrentEnabled">Enable BitTorrent engine</string>
+      <string id="TorrentEnabled_Explain">
+Controls whether the Hali service starts the BitTorrent seeding and download engine.
+
+Disabled: No torrents are seeded or downloaded; models are fetched directly from Hugging Face only.
+Not configured: The torrent engine is enabled by default.
+      </string>
+
+      <!-- ── User Controls policies ────────────────────────────────────── -->
+
+      <string id="AllowUserPause">Allow user to pause transfers</string>
+      <string id="AllowUserPause_Explain">
+Controls whether users can pause all active transfers via the Hali dashboard or API.
+
+Disabled: The pause function is blocked. The service enforces this regardless of UI state.
+Not configured: Users may pause transfers (default).
+      </string>
+
+      <string id="MaxPauseMinutes">Maximum pause duration (minutes)</string>
+      <string id="MaxPauseMinutes_Explain">
+Sets a maximum duration in minutes for user-initiated transfer pauses.
+
+0: No time limit on pauses (default).
+1–1440: Pause is automatically lifted after the specified number of minutes.
+
+Not configured: No time limit is enforced by policy.
+      </string>
+
+      <string id="AllowFocusMode">Allow focus mode</string>
+      <string id="AllowFocusMode_Explain">
+Controls whether users can enable focus mode, which suppresses background seeding activity during work hours.
+
+Disabled: Focus mode is unavailable to users.
+Not configured: Users may enable focus mode (default).
+      </string>
+
+      <string id="AllowUserChangeBandwidth">Allow user to change bandwidth limits</string>
+      <string id="AllowUserChangeBandwidth_Explain">
+Controls whether users can modify upload and download bandwidth settings in the Hali dashboard.
+
+When disabled, bandwidth inputs in the UI are locked (read-only). The MaxUploadKBps policy ceiling
+still applies regardless of this setting.
+
+Not configured: Users may adjust bandwidth settings (default).
+      </string>
+
+      <string id="AllowUserChangeLan">Allow user to change LAN sharing settings</string>
+      <string id="AllowUserChangeLan_Explain">
+Controls whether users can toggle LAN seeding and related network settings in the Hali dashboard.
+
+When disabled, LAN settings in the UI are locked (read-only). The EnableLanSeeding policy
+still applies regardless of this setting.
+
+Not configured: Users may adjust LAN settings (default).
+      </string>
+
+    </stringTable>
+
+    <presentationTable>
+
+      <presentation id="MaxUploadKBps">
+        <decimalTextBox refId="MaxUploadKBpsValue" defaultValue="0">Upload ceiling (KB/s — 0 = unlimited):</decimalTextBox>
+      </presentation>
+
+      <presentation id="MaxPauseMinutes">
+        <decimalTextBox refId="MaxPauseMinutesValue" defaultValue="0">Maximum pause duration (minutes, 0 = unlimited):</decimalTextBox>
+      </presentation>
+
+    </presentationTable>
+
+  </resources>
+
+</policyDefinitionResources>
+
