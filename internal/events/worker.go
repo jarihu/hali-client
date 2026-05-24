@@ -16,11 +16,14 @@ import (
 )
 
 type Worker struct {
-	queue   *Queue
-	wakeCh  chan struct{}
-	stopCh  chan struct{}
-	stopWg  sync.WaitGroup
-	loadCfg func() (config.File, error)
+	queue    *Queue
+	wakeCh   chan struct{}
+	stopCh   chan struct{}
+	stopOnce sync.Once
+	runMu    sync.Mutex
+	started  bool
+	stopWg   sync.WaitGroup
+	loadCfg  func() (config.File, error)
 }
 
 const maxDeliveryAttempts = 8
@@ -39,7 +42,15 @@ func DefaultQueueDir() string {
 }
 
 func (w *Worker) Run() {
+	w.runMu.Lock()
+	if w.started {
+		w.runMu.Unlock()
+		return
+	}
 	w.stopWg.Add(1)
+	w.started = true
+	w.runMu.Unlock()
+
 	defer w.stopWg.Done()
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -59,8 +70,15 @@ func (w *Worker) Run() {
 }
 
 func (w *Worker) Stop() {
-	close(w.stopCh)
-	w.stopWg.Wait()
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+	})
+	w.runMu.Lock()
+	started := w.started
+	w.runMu.Unlock()
+	if started {
+		w.stopWg.Wait()
+	}
 }
 
 func (w *Worker) Enqueue(event ModelPullEvent) error {
