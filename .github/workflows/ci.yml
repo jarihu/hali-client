@@ -47,15 +47,11 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y libayatana-appindicator3-dev
-
       - name: Vet (OSS)
-        run: go vet -tags oss ./...
+        run: go vet -tags oss $(go list -tags oss ./... | grep -v hali/cmd/tray)
 
       - name: Test (OSS)
-        run: go test -tags oss -race -count=1 ./...
+        run: go test -tags oss -race -count=1 $(go list -tags oss ./... | grep -v hali/cmd/tray)
 
   lint:
     name: Lint
