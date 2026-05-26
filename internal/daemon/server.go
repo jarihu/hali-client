@@ -195,7 +195,7 @@ func (s *Server) pauseState() (paused bool, untilUnix int64) {
 }
 
 func readyFilePath() string {
-	return filepath.Join(config.ServiceRunDir(), ".ready")
+	return filepath.Join(config.ServiceDataDir(), ".ready")
 }
 
 // generateNodeID returns a random hex string used as this node's LAN identity.

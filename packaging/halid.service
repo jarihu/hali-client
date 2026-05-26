@@ -1,16 +1,12 @@
 [Unit]
-Description=Hali daemon — model cache service
-Documentation=https://github.com/jarihu/hali-client
-After=network-online.target
-Wants=network-online.target
+Description=Hali Daemon (user service)
+After=graphical-session.target default.target
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/halid
 Restart=on-failure
-RestartSec=5s
-StandardOutput=journal
-StandardError=journal
+Environment=HOME=%h
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

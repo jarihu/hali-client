@@ -17,69 +17,64 @@ func daemonAliasesService() bool {
 	return true
 }
 
+// hasUserSession reports whether a D-Bus user session is available for systemctl --user.
+func hasUserSession() bool {
+	return strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")) != ""
+}
+
 func serviceInstallAction() error {
-	if err := ensureLinuxServiceAccountAndDirs(); err != nil {
+	// Enable for login/boot — works without an active session.
+	if err := runSystemctl("--user", "enable", linuxServiceName); err != nil {
 		return err
 	}
-	if err := runSystemctl("daemon-reload"); err != nil {
-		return err
-	}
-	if err := runSystemctl("enable", linuxServiceName); err != nil {
-		return err
-	}
-	return runSystemctl("start", linuxServiceName)
-}
-
-func serviceUninstallAction() error {
-	if err := runSystemctl("disable", linuxServiceName); err != nil {
-		return err
-	}
-	return runSystemctl("stop", linuxServiceName)
-}
-
-func serviceStartAction() error {
-	return runSystemctl("start", linuxServiceName)
-}
-
-func serviceStopAction() error {
-	return runSystemctl("stop", linuxServiceName)
-}
-
-func serviceRestartAction() error {
-	return runSystemctl("restart", linuxServiceName)
-}
-
-func serviceStatusAction() (string, error) {
-	return runSystemctlOutput("status", "--no-pager", linuxServiceName)
-}
-
-func runSystemctl(args ...string) error {
-	_, err := runSystemctlOutput(args...)
-	return err
-}
-
-func ensureLinuxServiceAccountAndDirs() error {
-	if _, err := runCommandOutput("id", "-u", "hali"); err != nil {
-		if err := runPrivileged("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "hali"); err != nil {
-			return fmt.Errorf("create hali system user: %w", err)
-		}
-	}
-
-	for _, dir := range []string{"/var/lib/hali", "/var/log/hali", "/run/hali"} {
-		if err := runPrivileged("install", "-d", "-m", "2775", "-o", "hali", "-g", "hali", dir); err != nil {
-			return fmt.Errorf("prepare %s: %w", dir, err)
-		}
+	// Start immediately if a D-Bus session is available; ignore failure if not.
+	if hasUserSession() {
+		_ = runSystemctl("--user", "start", linuxServiceName)
 	}
 	return nil
 }
 
-func runPrivileged(name string, args ...string) error {
-	if os.Geteuid() == 0 {
-		_, err := runCommandOutput(name, args...)
-		return err
+func serviceUninstallAction() error {
+	if hasUserSession() {
+		_ = runSystemctl("--user", "disable", "--now", linuxServiceName)
 	}
-	sudoArgs := append([]string{name}, args...)
-	_, err := runCommandOutput("sudo", sudoArgs...)
+	return nil
+}
+
+func serviceStartAction() error {
+	if !hasUserSession() {
+		return userSessionError()
+	}
+	return runSystemctl("--user", "start", linuxServiceName)
+}
+
+func serviceStopAction() error {
+	if !hasUserSession() {
+		return userSessionError()
+	}
+	return runSystemctl("--user", "stop", linuxServiceName)
+}
+
+func serviceRestartAction() error {
+	if !hasUserSession() {
+		return userSessionError()
+	}
+	return runSystemctl("--user", "restart", linuxServiceName)
+}
+
+func serviceStatusAction() (string, error) {
+	if !hasUserSession() {
+		return "", userSessionError()
+	}
+	return runSystemctlOutput("--user", "status", "--no-pager", linuxServiceName)
+}
+
+func userSessionError() error {
+	return fmt.Errorf("user systemd session not available\nTry:\n  loginctl enable-linger $USER\nor run inside a logged-in session")
+}
+
+func runSystemctl(args ...string) error {
+	_, err := runSystemctlOutput(args...)
 	return err
 }
 

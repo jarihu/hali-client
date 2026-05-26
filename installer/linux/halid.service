@@ -1,24 +1,12 @@
 [Unit]
-Description=Hali Daemon (local model cache + LAN sync)
-After=network.target
+Description=Hali Daemon (user service)
+After=graphical-session.target default.target
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/halid
-Restart=always
-RestartSec=5
-Environment=HALI_SERVICE_DATA_DIR=/var/lib/hali
-RuntimeDirectory=hali
-RuntimeDirectoryMode=2775
-
-User=hali
-Group=hali
-
-LimitNOFILE=65536
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=true
+Restart=on-failure
+Environment=HOME=%h
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

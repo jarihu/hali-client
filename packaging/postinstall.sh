@@ -1,5 +1,13 @@
 #!/bin/sh
 set -e
-systemctl daemon-reload
-systemctl enable halid
-systemctl start halid || true
+
+# Enable the per-user service for whoever ran sudo apt install.
+# loginctl enable-linger ensures halid starts on boot without a desktop session.
+if [ -n "$SUDO_USER" ]; then
+  uid=$(id -u "$SUDO_USER" 2>/dev/null) || true
+  if [ -n "$uid" ]; then
+    loginctl enable-linger "$SUDO_USER" 2>/dev/null || true
+    XDG_RUNTIME_DIR="/run/user/$uid" runuser -u "$SUDO_USER" -- \
+      systemctl --user enable --now halid.service 2>/dev/null || true
+  fi
+fi

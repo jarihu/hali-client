@@ -62,15 +62,22 @@ func main() {
 
 // buildServer creates the daemon Server (does not start listeners).
 func buildServer() (*daemon.Server, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("HOME not available: %w", err)
+	}
+	base := filepath.Join(home, ".hali")
+	if err := os.MkdirAll(base, 0700); err != nil {
+		return nil, fmt.Errorf("cannot write to ~/.hali: %w", err)
+	}
+	os.Chown(base, os.Getuid(), os.Getgid())
+
 	dataDir := config.ServiceDataDir()
 	if err := config.EnsureServiceConfigMaterialized(); err != nil {
 		return nil, fmt.Errorf("materialize service config: %w", err)
 	}
 	if err := os.MkdirAll(config.ServiceLogDir(), 0755); err != nil {
 		return nil, fmt.Errorf("create logs dir: %w", err)
-	}
-	if err := os.MkdirAll(config.ServiceRunDir(), 0755); err != nil {
-		return nil, fmt.Errorf("create run dir: %w", err)
 	}
 	for _, sub := range []string{"torrents", "cache"} {
 		if err := os.MkdirAll(filepath.Join(dataDir, sub), 0755); err != nil {

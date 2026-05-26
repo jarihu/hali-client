@@ -14,9 +14,29 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func TestPieceLengthConstant(t *testing.T) {
-	if lanPieceLen != 1<<24 {
-		t.Errorf("lanPieceLen = %d, want %d (16 MiB). Do NOT change this — it breaks swarm compatibility.", lanPieceLen, 1<<24)
+func TestChoosePieceSize(t *testing.T) {
+	const mib = 1 << 20
+	const gib = 1 << 30
+	cases := []struct {
+		bytes int64
+		want  int64
+	}{
+		{0, 2 * mib},
+		{1 * gib, 2 * mib},
+		{7*gib + gib - 1, 2 * mib},
+		{8 * gib, 4 * mib},
+		{16 * gib, 4 * mib},
+		{31*gib + gib - 1, 4 * mib},
+		{32 * gib, 8 * mib},
+		{64 * gib, 8 * mib},
+		{79*gib + gib - 1, 8 * mib},
+		{80 * gib, 16 * mib},
+		{200 * gib, 16 * mib},
+	}
+	for _, c := range cases {
+		if got := choosePieceSize(c.bytes); got != c.want {
+			t.Errorf("choosePieceSize(%d) = %d, want %d", c.bytes, got, c.want)
+		}
 	}
 }
 
@@ -87,6 +107,44 @@ func TestTorrentMetaJSONHasNoWebseedField(t *testing.T) {
 	raw := string(data)
 	if strings.Contains(raw, "webseeds") {
 		t.Errorf("torrentMeta JSON should not contain webseeds: %s", raw)
+	}
+}
+
+// TestBuildHybridMultiPiece verifies that ValidatePieceLayers passes for files
+// larger than one piece (the multi-piece code path in buildHybridSingleFileInfo).
+func TestBuildHybridMultiPiece(t *testing.T) {
+	const mib = 1 << 20
+	// 5 MiB — spans three 2 MiB pieces (choosePieceSize returns 2 MiB for < 8 GiB).
+	content := make([]byte, 5*mib)
+	for i := range content {
+		content[i] = byte(i*7 + 13)
+	}
+	root := t.TempDir()
+	name := "big.gguf"
+	filePath := filepath.Join(root, name)
+	if err := os.WriteFile(filePath, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Non-streaming path (no precomputed pieces).
+	_, _, _, err := buildHybridSingleFileInfo(filePath, name, nil, 0, nil)
+	if err != nil {
+		t.Fatalf("buildHybridSingleFileInfo 5 MiB file (non-streaming): %v", err)
+	}
+
+	// Streaming path: pieces precomputed at choosePieceSize granularity.
+	fileSize := int64(len(content))
+	pieceLen := choosePieceSize(fileSize)
+	ph := NewPieceHasher(pieceLen)
+	if _, err := ph.Write(content); err != nil {
+		t.Fatalf("PieceHasher.Write: %v", err)
+	}
+	pieces, err := ph.Finalize()
+	if err != nil {
+		t.Fatalf("PieceHasher.Finalize: %v", err)
+	}
+	_, _, _, err = buildHybridSingleFileInfo(filePath, name, pieces, fileSize, nil)
+	if err != nil {
+		t.Fatalf("buildHybridSingleFileInfo 5 MiB file (streaming): %v", err)
 	}
 }
 

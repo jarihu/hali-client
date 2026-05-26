@@ -220,6 +220,16 @@ func runDaemonStatus(_ *cobra.Command, _ []string) error {
 
 // runDaemonRun is the internal entry point for the daemon process.
 func runDaemonRun(_ *cobra.Command, _ []string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("HOME not available: %w", err)
+	}
+	base := filepath.Join(home, ".hali")
+	if err := os.MkdirAll(base, 0700); err != nil {
+		return fmt.Errorf("cannot write to ~/.hali: %w", err)
+	}
+	os.Chown(base, os.Getuid(), os.Getgid())
+
 	dataDir := config.ServiceDataDir()
 	if err := os.MkdirAll(config.ServiceLogDir(), 0755); err != nil {
 		return err
@@ -228,9 +238,6 @@ func runDaemonRun(_ *cobra.Command, _ []string) error {
 	daemon.InitLogging(config.ServiceLogDir(), cfg.DebugValue())
 
 	if err := os.MkdirAll(filepath.Join(dataDir, "cache"), 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(config.ServiceRunDir(), 0755); err != nil {
 		return err
 	}
 

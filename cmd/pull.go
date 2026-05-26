@@ -233,8 +233,12 @@ func runPullWithOptions(cmd *cobra.Command, opts pull.Options) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	if streamingHashEnabled {
-		ph := torrent.NewPieceHasher(torrent.LanPieceLen)
+	if streamingHashEnabled && selected.Size > 0 {
+		// Piece size must match what buildHybridSingleFileInfo will use (choosePieceSize(fileSize)).
+		// selected.Size is the declared HF file size; fileSize after download equals written.
+		// If selected.Size is unknown we skip streaming hash and let the daemon re-hash.
+		pieceLen := torrent.ChoosePieceSize(selected.Size)
+		ph := torrent.NewPieceHasher(pieceLen)
 		written, err = client.Download(ctx, repoID, selected.Name, revision, store.Dir(id), printProgress, io.MultiWriter(ph, snapshotHasher))
 		if err == nil {
 			pieces, err = ph.Finalize()
@@ -576,23 +580,35 @@ func notifyDaemonSeed(ctx context.Context, modelID, dir, filename, hfRepo, hfRev
 		Pieces:     pieces,
 		FileSize:   fileSize,
 	})
-	if err != nil || !resp.OK {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: seed command failed: %v\n", err)
+		return
+	}
+	if !resp.OK {
+		fmt.Fprintf(os.Stderr, "error: daemon rejected seed request: %s\n", resp.Error)
 		return
 	}
 	raw, err := json.Marshal(resp.Data)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: seed response marshal: %v\n", err)
 		return
 	}
 	var seedResp map[string]string
 	if err := json.Unmarshal(raw, &seedResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error: seed response unmarshal: %v\n", err)
 		return
 	}
 	jobID := seedResp["job_id"]
 	if jobID == "" {
+		fmt.Fprintf(os.Stderr, "error: daemon returned empty seed job id\n")
 		return
 	}
 	seedStatus, ok := waitForSeedFinalization(ctx, dc, jobID, dir)
-	if !ok || seedStatus.Infohash == "" || seedStatus.MagnetURI == "" {
+	if !ok {
+		return
+	}
+	if seedStatus.Infohash == "" || seedStatus.MagnetURI == "" {
+		fmt.Fprintf(os.Stderr, "error: seed job completed but infohash/magnet are empty (job %s)\n", jobID)
 		return
 	}
 	ingestModelID := strings.TrimSpace(hfRepo)
@@ -649,12 +665,18 @@ func waitForSeedFinalization(ctx context.Context, dc *daemon.Client, jobID, dir 
 	defer deadline.Stop()
 	for {
 		resp, err := dc.Send(daemon.Request{Cmd: daemon.CmdSeedStatus, JobID: jobID, Dir: dir})
-		if err == nil && resp.OK && resp.Data != nil {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: seed status poll error (job %s): %v\n", jobID, err)
+		} else if resp.OK && resp.Data != nil {
 			raw, marshalErr := json.Marshal(resp.Data)
 			if marshalErr == nil {
 				var status daemon.SeedStatusData
 				if unmarshalErr := json.Unmarshal(raw, &status); unmarshalErr == nil {
 					if status.Done {
+						if status.Error != "" {
+							fmt.Fprintf(os.Stderr, "error: seed job failed (job %s): %s\n", jobID, status.Error)
+							return status, false
+						}
 						return status, true
 					}
 				}
@@ -662,8 +684,10 @@ func waitForSeedFinalization(ctx context.Context, dc *daemon.Client, jobID, dir 
 		}
 		select {
 		case <-ctx.Done():
+			fmt.Fprintf(os.Stderr, "warning: seed finalization canceled (job %s)\n", jobID)
 			return daemon.SeedStatusData{}, false
 		case <-deadline.C:
+			fmt.Fprintf(os.Stderr, "error: timed out waiting for seed job %s to finalize\n", jobID)
 			return daemon.SeedStatusData{}, false
 		case <-ticker.C:
 		}

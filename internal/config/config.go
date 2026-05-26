@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -263,19 +262,7 @@ func EnsureConfigMaterialized() error {
 	return saveAtPath(path, defaultVisibleConfig(filepath.Join(DataDir(), "models")))
 }
 
-// shouldMaterializeUserConfig returns whether CLI startup should create
-// DataDir()/config.json if absent. On Linux, skip user-config materialization
-// when service-mode paths are active to avoid creating misleading ~/.hali/config.json.
 func shouldMaterializeUserConfig() bool {
-	if runtime.GOOS != "linux" {
-		return true
-	}
-	if _, err := os.Stat(filepath.Join(ServiceDataDir(), "config.json")); err == nil {
-		return false
-	}
-	if _, err := os.Stat(IPCSocketPath()); err == nil {
-		return false
-	}
 	return true
 }
 
@@ -569,42 +556,29 @@ func DaemonListenAddr() (string, error) {
 	return "0.0.0.0", nil
 }
 
-// ServiceDataDir returns the daemon state root for service-managed runtime.
+// ServiceDataDir returns the daemon state root — always the current user's ~/.hali.
 func ServiceDataDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_DATA_DIR")); d != "" {
 		return d
 	}
-	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		return "/var/lib/hali"
+	home, err := userHomeDir()
+	if err != nil {
+		return DataDir()
 	}
-	return DataDir()
+	return filepath.Join(home, ".hali")
 }
 
-// ServiceLogDir returns the daemon log root for service-managed runtime.
+// ServiceLogDir returns the daemon log root — always ~/.hali/logs.
 func ServiceLogDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_LOG_DIR")); d != "" {
 		return d
 	}
-	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		return "/var/log/hali"
-	}
-	return filepath.Join(DataDir(), "logs")
-}
-
-// ServiceRunDir returns the daemon runtime state root for service-managed runtime.
-func ServiceRunDir() string {
-	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_RUN_DIR")); d != "" {
-		return d
-	}
-	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		return "/run/hali"
-	}
-	return DataDir()
+	return filepath.Join(ServiceDataDir(), "logs")
 }
 
 // IPCSocketPath returns the Unix domain socket path used for IPC on Linux/macOS.
 func IPCSocketPath() string {
-	return filepath.Join(ServiceRunDir(), "hali.sock")
+	return filepath.Join(ServiceDataDir(), "hali.sock")
 }
 
 // IPCSecretPath returns the path to the shared-secret file used for IPC auth on Windows.

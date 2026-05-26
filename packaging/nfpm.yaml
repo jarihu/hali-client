@@ -17,7 +17,7 @@ contents:
     file_info:
       mode: 0755
   - src: ./packaging/halid.service
-    dst: /lib/systemd/system/halid.service
+    dst: /usr/lib/systemd/user/halid.service
     file_info:
       mode: 0644
 

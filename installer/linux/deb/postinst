@@ -1,24 +1,23 @@
 #!/bin/sh
 set -e
 
-if ! id -u hali >/dev/null 2>&1; then
-  useradd --system --no-create-home --shell /usr/sbin/nologin hali
-fi
-
-install -d -o hali -g hali /var/lib/hali
-install -d -o hali -g hali /var/log/hali
-install -d -o hali -g hali /run/hali
-
-systemctl daemon-reload
-systemctl enable halid.service
-systemctl start halid.service
-
 # Register hali:// URL protocol handler (best-effort; headless servers may lack xdg tooling)
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database /usr/share/applications/ || true
 fi
 if command -v xdg-mime >/dev/null 2>&1; then
   xdg-mime default hali.desktop x-scheme-handler/hali || true
+fi
+
+# Enable the per-user service for whoever ran sudo apt install.
+# loginctl enable-linger ensures halid starts on boot without a desktop session.
+if [ -n "$SUDO_USER" ]; then
+  uid=$(id -u "$SUDO_USER" 2>/dev/null) || true
+  if [ -n "$uid" ]; then
+    loginctl enable-linger "$SUDO_USER" 2>/dev/null || true
+    XDG_RUNTIME_DIR="/run/user/$uid" runuser -u "$SUDO_USER" -- \
+      systemctl --user enable --now halid.service 2>/dev/null || true
+  fi
 fi
 
 exit 0

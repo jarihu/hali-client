@@ -1,4 +1,3 @@
 #!/bin/sh
 set -e
-systemctl stop halid || true
-systemctl disable halid || true
+# User services cannot be reliably controlled from dpkg root context.

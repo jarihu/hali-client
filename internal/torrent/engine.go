@@ -29,12 +29,35 @@ import (
 	"hali/internal/safepath"
 )
 
-// LanPieceLen is the fixed piece length for all model torrents.
-// FROZEN: changing this breaks infohash compatibility with existing swarms.
+// LanPieceLen is the legacy fixed piece length (16 MiB). Retained for test
+// fixtures and backward-compatibility references. New torrents use ChoosePieceSize.
 const LanPieceLen = 1 << 24 // 16 MiB
 
-// keep unexported alias so internal code stays consistent with prior references.
+// keep unexported alias so existing internal code that references it still compiles.
 const lanPieceLen = LanPieceLen
+
+// ChoosePieceSize returns the piece length for a torrent of the given file size.
+// Smaller files use smaller pieces to keep per-piece overhead low; large files
+// use 16 MiB pieces to cap the piece-hash list size.
+// The streaming hasher in pull.go must use the same value so piece hashes match.
+func ChoosePieceSize(fileBytes int64) int64 {
+	return choosePieceSize(fileBytes)
+}
+
+func choosePieceSize(fileBytes int64) int64 {
+	const mib = 1 << 20
+	const gib = 1 << 30
+	switch {
+	case fileBytes < 8*gib:
+		return 2 * mib
+	case fileBytes < 32*gib:
+		return 4 * mib
+	case fileBytes < 80*gib:
+		return 8 * mib
+	default:
+		return 16 * mib
+	}
+}
 
 type SeedStatus string
 
@@ -534,6 +557,7 @@ func (e *Engine) StartSeed(modelDir, filename, modelID, hfRepo, revision string,
 		defer e.mu.Unlock()
 		job.Done = true
 		if err != nil {
+			slog.Error("seed job failed", "job_id", jobID, "model_id", modelID, "error", err)
 			job.Error = err.Error()
 			return
 		}
@@ -980,19 +1004,28 @@ func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSiz
 			}
 			fileSize = fi.Size()
 		}
+		// pieces were hashed at choosePieceSize(fileSize); PieceLength must match
+		// so that v1 piece count and the v2 merkle tree below are consistent.
 		info = metainfo.Info{
-			PieceLength: lanPieceLen,
+			PieceLength: choosePieceSize(fileSize),
 			Pieces:      pieces,
 			Name:        filepath.Base(filename),
 			Length:      fileSize,
 			Private:     private,
 		}
 	} else {
-		info = metainfo.Info{PieceLength: lanPieceLen, Private: private}
+		fi, err := os.Stat(filePath)
+		if err != nil {
+			return metainfo.Info{}, nil, nil, err
+		}
+		info = metainfo.Info{PieceLength: choosePieceSize(fi.Size()), Private: private}
 		if err := info.BuildFromFilePath(filePath); err != nil {
 			return metainfo.Info{}, nil, nil, err
 		}
 	}
+
+	pl := info.PieceLength   // shorthand; v2 merkle must use the same piece size as v1
+	plInt := int(info.PieceLength) // SumMinLength takes int
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -1002,8 +1035,8 @@ func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSiz
 
 	fileHasher := merkle.NewHash()
 	pieceHasher := merkle.NewHash()
-	pieceLayerHashes := make([][32]byte, 0, max(1, int((info.Length+lanPieceLen-1)/lanPieceLen)))
-	remainingInPiece := int64(lanPieceLen)
+	pieceLayerHashes := make([][32]byte, 0, max(1, int((info.Length+pl-1)/pl)))
+	remainingInPiece := pl
 	buf := make([]byte, 1<<20)
 
 	for {
@@ -1026,10 +1059,10 @@ func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSiz
 				remainingInPiece -= chunk
 				if remainingInPiece == 0 {
 					var pieceHash [32]byte
-					copy(pieceHash[:], pieceHasher.SumMinLength(nil, lanPieceLen))
+					copy(pieceHash[:], pieceHasher.SumMinLength(nil, plInt))
 					pieceLayerHashes = append(pieceLayerHashes, pieceHash)
 					pieceHasher.Reset()
-					remainingInPiece = lanPieceLen
+					remainingInPiece = pl
 				}
 			}
 		}
@@ -1042,17 +1075,17 @@ func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSiz
 		}
 	}
 
-	if info.Length > 0 && remainingInPiece != lanPieceLen {
+	if info.Length > 0 && remainingInPiece != pl {
 		var tailHash [32]byte
-		copy(tailHash[:], pieceHasher.SumMinLength(nil, lanPieceLen))
+		copy(tailHash[:], pieceHasher.SumMinLength(nil, plInt))
 		pieceLayerHashes = append(pieceLayerHashes, tailHash)
 	}
 
 	var piecesRoot [32]byte
 	copy(piecesRoot[:], fileHasher.Sum(nil))
 	pieceLayers := map[string]string{}
-	if info.Length > lanPieceLen {
-		piecesRoot = merkle.RootWithPadHash(pieceLayerHashes, metainfo.HashForPiecePad(lanPieceLen))
+	if info.Length > pl {
+		piecesRoot = merkle.RootWithPadHash(pieceLayerHashes, metainfo.HashForPiecePad(pl))
 		var layer strings.Builder
 		layer.Grow(len(pieceLayerHashes) * 32)
 		for _, h := range pieceLayerHashes {

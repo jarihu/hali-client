@@ -239,16 +239,12 @@ func TestOllamaModelsDirPrefersOllamaModelsEnv(t *testing.T) {
 func TestServiceDirEnvOverrides(t *testing.T) {
 	t.Setenv("HALI_SERVICE_DATA_DIR", "/tmp/hali-data")
 	t.Setenv("HALI_SERVICE_LOG_DIR", "/tmp/hali-log")
-	t.Setenv("HALI_SERVICE_RUN_DIR", "/tmp/hali-run")
 
 	if got := ServiceDataDir(); got != "/tmp/hali-data" {
 		t.Fatalf("ServiceDataDir = %q", got)
 	}
 	if got := ServiceLogDir(); got != "/tmp/hali-log" {
 		t.Fatalf("ServiceLogDir = %q", got)
-	}
-	if got := ServiceRunDir(); got != "/tmp/hali-run" {
-		t.Fatalf("ServiceRunDir = %q", got)
 	}
 }
 

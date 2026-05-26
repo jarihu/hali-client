@@ -303,9 +303,10 @@ func TestSeedFromPieceHashesMatchesSeed(t *testing.T) {
 	}
 
 	// Streaming path: SeedFromPieceHashes with precomputed hashes.
+	// Piece size must match what buildHybridSingleFileInfo uses (choosePieceSize).
 	dir2 := env.modelDir("seed-streaming")
 	writeModelFile(t, dir2, content)
-	ph := NewPieceHasher(LanPieceLen)
+	ph := NewPieceHasher(choosePieceSize(int64(len(content))))
 	if _, err := ph.Write(content); err != nil {
 		t.Fatalf("PieceHasher.Write: %v", err)
 	}
