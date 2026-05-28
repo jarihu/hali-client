@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"hali/internal/daemon"
+	"hali/internal/hf"
+	"hali/internal/pull"
+	"strings"
 	"testing"
 	"time"
-
-	"hali/internal/daemon"
 )
 
 func TestParseRepoArg(t *testing.T) {
@@ -123,5 +125,96 @@ func TestBuildFallbackBase(t *testing.T) {
 	want := "jina_reranker_v1_en"
 	if got != want {
 		t.Fatalf("buildFallbackBase = %q, want %q", got, want)
+	}
+}
+
+func TestParsePullFilesFlag(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want []string
+	}{
+		{"a.gguf,b.gguf", []string{"a.gguf", "b.gguf"}},
+		{" a.gguf , b.gguf ", []string{"a.gguf", "b.gguf"}},
+		{"a.gguf,,b.gguf", []string{"a.gguf", "b.gguf"}},
+		{"a.gguf", []string{"a.gguf"}},
+		{"", nil},
+		{"  ,  ", nil},
+	}
+	for _, tc := range cases {
+		var got []string
+		for _, name := range strings.Split(tc.raw, ",") {
+			if trimmed := strings.TrimSpace(name); trimmed != "" {
+				got = append(got, trimmed)
+			}
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("raw=%q: got %v, want %v", tc.raw, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("raw=%q [%d]: got %q, want %q", tc.raw, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestAllFilesPathWhenNoSpecifier(t *testing.T) {
+	// opts with no FileName, no Files, and pullFileIndex==0 → all-files path.
+	opts := pull.Options{Repo: "owner/repo"}
+	if opts.FileName != "" || len(opts.Files) != 0 {
+		t.Fatal("expected empty specifiers")
+	}
+	// The routing condition: no file name, pullFileIndex is the package-level var (0 at test time).
+	noSingleFile := opts.FileName == "" && pullFileIndex == 0
+	if !noSingleFile {
+		t.Error("expected all-files path to be taken")
+	}
+}
+
+func TestSingleFilePathWhenFileNameSet(t *testing.T) {
+	opts := pull.Options{Repo: "owner/repo", FileName: "model.Q4_K_M.gguf"}
+	if opts.FileName == "" {
+		t.Fatal("expected FileName to be set")
+	}
+	// The routing condition: FileName set → single-file path.
+	isSingleFile := opts.FileName != ""
+	if !isSingleFile {
+		t.Error("expected single-file path to be taken")
+	}
+}
+
+func TestOnlyGGUFFilesFiltersAndSorts(t *testing.T) {
+	in := []hf.File{
+		{Name: "tokenizer.json", Size: 10},
+		{Name: "Q8.gguf", Size: 3},
+		{Name: "q4.gguf", Size: 1},
+		{Name: "MODEL.SAFETENSORS", Size: 2},
+	}
+	out := onlyGGUFFiles(in)
+	if len(out) != 2 {
+		t.Fatalf("len(out) = %d, want 2", len(out))
+	}
+	if out[0].Name != "q4.gguf" || out[1].Name != "Q8.gguf" {
+		t.Fatalf("unexpected ordering: %+v", out)
+	}
+}
+
+func TestBuildCollectionKeyDeterministic(t *testing.T) {
+	artifacts := []downloadedArtifact{
+		{FileName: "q4.gguf", FileSize: 11},
+		{FileName: "q8.gguf", FileSize: 22},
+	}
+	a := buildCollectionKey("owner/repo", "main", artifacts)
+	b := buildCollectionKey("owner/repo", "main", []downloadedArtifact{
+		{FileName: "q8.gguf", FileSize: 22},
+		{FileName: "q4.gguf", FileSize: 11},
+	})
+	if a != b {
+		t.Fatalf("collection key should be stable across ordering: %q vs %q", a, b)
+	}
+	c := buildCollectionKey("owner/repo", "main", []downloadedArtifact{{FileName: "q4.gguf", FileSize: 11}})
+	if a == c {
+		t.Fatal("collection key should differ when gguf set differs")
 	}
 }

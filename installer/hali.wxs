@@ -68,18 +68,16 @@
           <ServiceControl
             Id="HaliDaemonSvcCtrl"
             Name="HaliDaemon"
-            Start="install"
             Stop="both"
-            Remove="uninstall"
+            Remove="both"
             Wait="yes" />
-          <!-- Recovery policy: restart 5s, 30s, 60s -->
-          <util:ServiceConfig
-            ServiceName="HaliDaemon"
-            FirstFailureActionType="restart"
-            SecondFailureActionType="restart"
-            ThirdFailureActionType="restart"
-            RestartServiceDelayInSeconds="5"
-            ResetPeriodInDays="1" />
+          <!-- Cleanup legacy NSIS service name so upgrades do not fail with file-in-use locks. -->
+          <ServiceControl
+            Id="LegacyHalidSvcCtrl"
+            Name="halid"
+            Stop="both"
+            Remove="both"
+            Wait="yes" />
         </Component>
 
       </Directory>
@@ -194,6 +192,7 @@
     </Feature>
 
     <!-- Single-page installer UI -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)license.rtf" />
     <ui:WixUI Id="WixUI_Minimal" />
 
   </Package>

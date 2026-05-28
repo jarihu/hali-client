@@ -10,6 +10,22 @@ The Linux service model is:
 
 For non-sudo CLI usage, your user must be in the `hali` group.
 
+## hali:// protocol handler (web launch)
+
+Deb installs register `hali://` via desktop integration. For tarball/manual installs,
+register it once for your user:
+
+```sh
+hali protocol install
+hali protocol status
+```
+
+Webpages can then launch Hali directly:
+
+```html
+<a href="hali://model/Qwen/Qwen3-32B?version=latest">Open in Hali</a>
+```
+
 ### Debian/Ubuntu (deb package)
 
 ```sh
@@ -252,6 +268,9 @@ Or add to `~/.bashrc` / `~/.zshrc` for persistence.
 ### Get a model
 
 ```sh
+# Start daemon (required for seeding + .torrent ingest uploads)
+hali daemon start
+
 # Search Hugging Face — results ranked by downloads, filtered to GGUF
 hali search llama
 
@@ -263,7 +282,13 @@ hali pull TheBloke/Llama-3-8B-Instruct-GGUF
 
 # Or use the canonical model ID to skip all prompts
 hali pull llama:8b:instruct:q5_k_m
+
+# Download all GGUF files from a repo (whole repo variants)
+hali pull TheBloke/Llama-3-8B-Instruct-GGUF --non-interactive
 ```
+
+Successful pulls enqueue ingest delivery so the backend receives the real `.torrent`
+artifact produced by the daemon.
 
 ### Inspect your cache and daemon state
 

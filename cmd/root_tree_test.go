@@ -63,6 +63,7 @@ func TestNewRootCmdTopLevelTree(t *testing.T) {
 		"telemetry",
 		"config",
 		"profile",
+		"protocol",
 		"pull",
 		"search",
 		"list",

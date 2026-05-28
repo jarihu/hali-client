@@ -81,6 +81,27 @@ func TestRunConfigSetDebug(t *testing.T) {
 	}
 }
 
+func TestRunConfigSetPullConcurrency(t *testing.T) {
+	t.Setenv("HALI_SERVICE_DATA_DIR", t.TempDir())
+	if err := runConfigSet(nil, []string{"pull_concurrency", "4"}); err != nil {
+		t.Fatalf("runConfigSet pull_concurrency: %v", err)
+	}
+	cfg, err := config.LoadService()
+	if err != nil {
+		t.Fatalf("LoadService: %v", err)
+	}
+	if got := cfg.PullConcurrencyValue(); got != 4 {
+		t.Fatalf("PullConcurrencyValue() = %d, want 4", got)
+	}
+}
+
+func TestRunConfigSetPullConcurrencyRejectsZero(t *testing.T) {
+	t.Setenv("HALI_SERVICE_DATA_DIR", t.TempDir())
+	if err := runConfigSet(nil, []string{"pull_concurrency", "0"}); err == nil {
+		t.Fatal("runConfigSet expected error for pull_concurrency=0")
+	}
+}
+
 func TestRunConfigSetLANHMACEnabled(t *testing.T) {
 	t.Setenv("HALI_SERVICE_DATA_DIR", t.TempDir())
 	if err := runConfigSet(nil, []string{"lan.hmac_enabled", "false"}); err != nil {
@@ -170,6 +191,9 @@ func TestRunConfigShowIncludesConfigPath(t *testing.T) {
 	}
 	if !strings.Contains(out, "debug:") {
 		t.Fatalf("config show output missing debug: %q", out)
+	}
+	if !strings.Contains(out, "pull_concurrency:") {
+		t.Fatalf("config show output missing pull_concurrency: %q", out)
 	}
 }
 

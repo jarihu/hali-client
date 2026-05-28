@@ -43,7 +43,7 @@ func (s *Server) webMux() http.Handler {
 	// ── JSON API ─────────────────────────────────────────
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		writeJSON(w, map[string]any{
 			"status":  "ok",
 			"version": buildinfo.Version,
 			"commit":  buildinfo.Commit,
@@ -52,7 +52,7 @@ func (s *Server) webMux() http.Handler {
 	})
 	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(s.statsSnapshot()) //nolint:errcheck
+		writeJSON(w, s.statsSnapshot())
 	})
 	mux.HandleFunc("/api/pause-state", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -61,20 +61,20 @@ func (s *Server) webMux() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		paused, untilUnix := s.pauseState()
-		json.NewEncoder(w).Encode(map[string]any{"paused": paused, "pause_until": untilUnix}) //nolint:errcheck
+		writeJSON(w, map[string]any{"paused": paused, "pause_until": untilUnix})
 	})
 	mux.HandleFunc("/api/lan-sharing", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode(map[string]bool{"enabled": s.lanShare.Load()}) //nolint:errcheck
+			writeJSON(w, map[string]bool{"enabled": s.lanShare.Load()})
 		case http.MethodPost:
 			var payload struct {
 				Enabled bool `json:"enabled"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+				writeJSON(w, map[string]string{"error": err.Error()})
 				return
 			}
 			s.lanShare.Store(payload.Enabled)
@@ -84,14 +84,14 @@ func (s *Server) webMux() http.Handler {
 			} else {
 				s.activity.Append(Event{Kind: "lan.sharing", Message: "LAN sharing disabled"})
 			}
-			json.NewEncoder(w).Encode(map[string]bool{"ok": true, "enabled": s.lanShare.Load()}) //nolint:errcheck
+			writeJSON(w, map[string]bool{"ok": true, "enabled": s.lanShare.Load()})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 	mux.HandleFunc("/api/activity", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(s.activity.Snapshot(50)) //nolint:errcheck
+		writeJSON(w, s.activity.Snapshot(50))
 	})
 	mux.HandleFunc("/api/lan-seen", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -99,19 +99,19 @@ func (s *Server) webMux() http.Handler {
 		if len(rows) > maxLANSeenRows {
 			rows = rows[:maxLANSeenRows]
 		}
-		json.NewEncoder(w).Encode(LanSeenData{Announcements: rows}) //nolint:errcheck
+		writeJSON(w, LanSeenData{Announcements: rows})
 	})
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
 			// Always return effective (policy-applied) settings so the UI reflects enforced values.
-			json.NewEncoder(w).Encode(s.effectiveSettings()) //nolint:errcheck
+			writeJSON(w, s.effectiveSettings())
 		case http.MethodPost:
 			incoming, err := parseIncomingSettings(r)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+				writeJSON(w, map[string]string{"error": err.Error()})
 				return
 			}
 			s.settings.Lock()
@@ -122,7 +122,7 @@ func (s *Server) webMux() http.Handler {
 			// If nothing changed, avoid writing config.json. This prevents stale UI
 			// submissions from overwriting newer file edits made via CLI/config file.
 			if incoming == prev {
-				json.NewEncoder(w).Encode(map[string]any{"ok": true, "effective": s.applySettings(incoming)}) //nolint:errcheck
+				writeJSON(w, map[string]any{"ok": true, "effective": s.applySettings(incoming)})
 				return
 			}
 
@@ -143,7 +143,7 @@ func (s *Server) webMux() http.Handler {
 			s.persistSettings()
 
 			s.activity.Append(Event{Kind: "settings.update", Message: "resource limits updated"})
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "effective": effective}) //nolint:errcheck
+			writeJSON(w, map[string]any{"ok": true, "effective": effective})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -160,7 +160,7 @@ func (s *Server) webMux() http.Handler {
 		rawPolicy := s.resolver.RawPolicy()
 		s.resolverMu.RUnlock()
 		effective := s.effectiveSettings()
-		json.NewEncoder(w).Encode(struct { //nolint:errcheck
+		writeJSON(w, struct {
 			Managed      bool            `json:"managed"`
 			LockedFields map[string]bool `json:"locked_fields"`
 			Effective    policy.Settings `json:"effective"`
@@ -184,7 +184,7 @@ func (s *Server) webMux() http.Handler {
 		if !allowPause {
 			slog.Warn("pause_denied")
 			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]string{"error": "pause is disabled by organization policy"}) //nolint:errcheck
+			writeJSON(w, map[string]string{"error": "pause is disabled by organization policy"})
 			return
 		}
 
@@ -194,7 +194,7 @@ func (s *Server) webMux() http.Handler {
 		if r.Body != nil {
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !strings.Contains(err.Error(), "EOF") {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+				writeJSON(w, map[string]string{"error": err.Error()})
 				return
 			}
 		}
@@ -218,12 +218,12 @@ func (s *Server) webMux() http.Handler {
 			s.activity.Append(Event{Kind: "transfers.pause", Message: "transfers paused"})
 		}
 		_, untilUnix := s.pauseState()
-		json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, map[string]any{
 			"ok":              true,
 			"paused":          true,
 			"pause_until":     untilUnix,
 			"applied_minutes": applied,
-		}) //nolint:errcheck
+		})
 	})
 	mux.HandleFunc("/api/resume", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -236,7 +236,7 @@ func (s *Server) webMux() http.Handler {
 			slog.Info("resume_applied")
 			s.activity.Append(Event{Kind: "transfers.resume", Message: "transfers resumed"})
 		}
-		json.NewEncoder(w).Encode(map[string]any{"ok": true, "paused": false, "pause_until": 0}) //nolint:errcheck
+		writeJSON(w, map[string]any{"ok": true, "paused": false, "pause_until": 0})
 	})
 
 	// ── HTML fragments (HTMX polling targets) ────────────
@@ -664,6 +664,12 @@ func isAllowedHost(host, listenAddr string) bool {
 		bindHost = listenAddr
 	}
 	return strings.EqualFold(hostOnly, bindHost)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("web json encode failed", "error", err)
+	}
 }
 
 // isAllowedOrigin reports whether the Origin header value matches the listen address.

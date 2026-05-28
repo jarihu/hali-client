@@ -82,7 +82,12 @@ const (
 )
 
 func NewServer(engine *torrent.Engine, store *cache.Store, stats *torrent.StatsCollector) *Server {
-	nodeID := generateNodeID()
+	nodeID, err := config.LoadOrCreateNodeID()
+	if err != nil {
+		// Keep constructor non-failing; Start() will hard-fail if identity cannot be loaded.
+		nodeID = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano())
+		slog.Warn("load node id failed during constructor; using ephemeral id", "error", err)
+	}
 	s := &Server{
 		engine:     engine,
 		store:      store,
@@ -91,7 +96,7 @@ func NewServer(engine *torrent.Engine, store *cache.Store, stats *torrent.StatsC
 		stats:      stats,
 		startedAt:  time.Now(),
 		stopCh:     make(chan struct{}),
-		resolver:   policy.NewResolver(policy.Policy{}), // no-op until Start loads HKLM
+		resolver:   policy.NewResolver(policy.Policy{}),
 		stopPolicy: func() {},
 	}
 	s.lanShare.Store(true)
@@ -198,24 +203,11 @@ func readyFilePath() string {
 	return filepath.Join(config.ServiceDataDir(), ".ready")
 }
 
-// generateNodeID returns a random hex string used as this node's LAN identity.
-// Will be replaced by blake3(ed25519_pubkey) when the signing layer is implemented.
-func generateNodeID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic("generateNodeID: " + err.Error())
-	}
-	return hex.EncodeToString(b)
-}
-
 // Start initializes daemon listeners on the fixed contract ports.
 // IPC uses a Unix domain socket on Linux/macOS (0600 permissions — OS-enforced
 // access control) and TCP with a shared-secret token on Windows.
 func (s *Server) Start() error {
-	httpHost, err := config.DaemonListenAddr()
-	if err != nil {
-		return err
-	}
+	httpHost := "0.0.0.0"
 	nodeID, err := config.LoadOrCreateNodeID()
 	if err != nil {
 		return fmt.Errorf("load node id: %w", err)
@@ -366,8 +358,9 @@ func (s *Server) bindListeners(ipcLn, webLn net.Listener, httpAddr string) error
 
 	slog.Info("daemon_started", "port", s.engine.Port(), "ipc_addr", IPCAddr(), "http_addr", httpAddr)
 
-	// Write .ready sentinel so tray knows the HTTP server is accepting.
-	os.WriteFile(readyFilePath(), []byte("1"), 0600) //nolint:errcheck
+	if err := os.WriteFile(readyFilePath(), []byte("1"), 0600); err != nil {
+		slog.Warn("write ready sentinel failed", "error", err)
+	}
 
 	s.wg.Add(1)
 	go func() {
@@ -542,8 +535,9 @@ func (s *Server) Stop() {
 	s.stopOnce.Do(func() {
 		slog.Info("daemon_stopped")
 
-		// Remove .ready before closing listeners so tray detects shutdown promptly.
-		os.Remove(readyFilePath()) //nolint:errcheck
+		if err := os.Remove(readyFilePath()); err != nil {
+			slog.Warn("remove ready sentinel failed", "error", err)
+		}
 
 		close(s.stopCh)
 
@@ -551,14 +545,20 @@ func (s *Server) Stop() {
 
 		if s.webSrv != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			s.webSrv.Shutdown(ctx) //nolint:errcheck
+			if err := s.webSrv.Shutdown(ctx); err != nil {
+				slog.Warn("web server shutdown failed", "error", err)
+			}
 			cancel()
 		}
 		if s.webLn != nil {
-			s.webLn.Close() //nolint:errcheck
+			if err := s.webLn.Close(); err != nil {
+				slog.Warn("web listener close failed", "error", err)
+			}
 		}
 		if s.ipcLn != nil {
-			s.ipcLn.Close() //nolint:errcheck
+			if err := s.ipcLn.Close(); err != nil {
+				slog.Warn("ipc listener close failed", "error", err)
+			}
 		}
 
 		if s.announcer != nil {
@@ -613,6 +613,10 @@ func (s *Server) handle(req Request) Response {
 		return Response{OK: false, Error: "list is not served by daemon IPC; use local cache list"}
 	case CmdSeed:
 		return s.handleSeed(req)
+	case CmdSeedFromFile:
+		return s.handleSeedFromFile(req)
+	case CmdSeedCollection:
+		return s.handleSeedCollection(req)
 	case CmdSeedStatus:
 		return s.handleSeedStatus(req)
 	case CmdEnqueueEvent:
@@ -700,6 +704,36 @@ func (s *Server) handleSeed(req Request) Response {
 		return Response{OK: false, Error: "unsafe filename"}
 	}
 	jobID := s.engine.StartSeed(req.Dir, req.Filename, req.ModelID, req.HFRepo, req.HFRevision, req.Pieces, req.FileSize)
+	return Response{OK: true, Data: map[string]string{"status": "hashing", "job_id": jobID}}
+}
+
+func (s *Server) handleSeedFromFile(req Request) Response {
+	if req.Dir == "" || req.ModelID == "" || req.Infohash == "" {
+		return Response{OK: false, Error: "seed_from_file requires dir, model_id, infohash"}
+	}
+	canonDir, err := safepath.Canonical(s.store.Root, req.Dir)
+	if err != nil {
+		return Response{OK: false, Error: "invalid dir: " + err.Error()}
+	}
+	req.Dir = canonDir
+	identity := torrent.TorrentIdentity{
+		InfohashV1: strings.ToLower(strings.TrimSpace(req.Infohash)),
+		InfohashV2: strings.ToLower(strings.TrimSpace(req.InfohashV2)),
+	}
+	jobID := s.engine.StartSeedFromTorrentFile(req.Dir, identity.InfohashV1, req.ModelID, identity)
+	return Response{OK: true, Data: map[string]string{"status": "seeding", "job_id": jobID}}
+}
+
+func (s *Server) handleSeedCollection(req Request) Response {
+	if req.Dir == "" || req.ModelID == "" {
+		return Response{OK: false, Error: "seed_collection requires dir, model_id"}
+	}
+	canonDir, err := safepath.Canonical(s.store.Root, req.Dir)
+	if err != nil {
+		return Response{OK: false, Error: "invalid dir: " + err.Error()}
+	}
+	req.Dir = canonDir
+	jobID := s.engine.StartSeedCollection(req.Dir, req.ModelID, req.HFRepo, req.HFRevision)
 	return Response{OK: true, Data: map[string]string{"status": "hashing", "job_id": jobID}}
 }
 
@@ -834,7 +868,7 @@ func (s *Server) handleLanQuery(req Request) Response {
 		Infohash:    best.Identity.InfohashV1,
 		InfohashV2:  best.Identity.InfohashV2,
 		HFRepo:      best.HFRepo,
-		ArtifactKey: artifactKey(req.ModelID, best.Revision),
+		ArtifactKey: ArtifactKey(req.ModelID, best.Revision),
 		PeerCount:   peerCount,
 		LastSeen:    lastSeen.Unix(),
 		PeerAddrs:   peerAddrsFromHints(hints, best.Identity.InfohashV1, time.Now()),
@@ -901,7 +935,7 @@ func summarizeLANSeen(snap map[string][]ModelHint, now time.Time) []LanSeenEntry
 			Revision:    best.Revision,
 			Infohash:    best.Identity.InfohashV1,
 			InfohashV2:  best.Identity.InfohashV2,
-			ArtifactKey: artifactKey(modelID, best.Revision),
+			ArtifactKey: ArtifactKey(modelID, best.Revision),
 			PeerCount:   peerCount,
 			LastSeen:    lastSeen.Unix(),
 			PeerAddrs:   peerAddrsFromHints(hints, best.Identity.InfohashV1, now),
@@ -916,7 +950,7 @@ func summarizeLANSeen(snap map[string][]ModelHint, now time.Time) []LanSeenEntry
 	return rows
 }
 
-func artifactKey(modelID, revision string) string {
+func ArtifactKey(modelID, revision string) string {
 	if strings.TrimSpace(revision) == "" {
 		return modelID
 	}
@@ -1131,6 +1165,9 @@ func (s *Server) seedingModels() []lanModelAnnounce {
 }
 
 func writeResp(conn net.Conn, resp Response) {
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		tcp.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	}
 	json.NewEncoder(conn).Encode(resp)
 }
 

@@ -4,18 +4,30 @@
 caches them locally, and seeds completed downloads to other machines on
 your LAN via BitTorrent. No account, no cloud, no central server required.
 
+Client model is hybrid (not metadata-only):
+- resolves GGUF artifacts
+- generates torrent artifacts/metadata
+- registers artifacts with backend
+- starts local LAN seeding
+
+Backend model is registry-only:
+- stores artifact/job registration
+- does not track or own seeding runtime state
+
 ---
 
 ## Quick start
 
 ```sh
 hali search mistral          # find a model on Hugging Face
+hali daemon start            # start daemon for seeding + torrent ingest
 hali pull mistral            # download it interactively
 hali list                    # show everything in the local cache
 hali profile create          # create/update signed publisher profile
-hali daemon start            # start the background seeder
 hali daemon status           # check what is being seeded
 hali network status          # inspect LAN networking capabilities
+hali protocol install        # register hali:// URL handler for this user
+hali protocol status         # verify protocol handler registration
 hali config show             # inspect full editable daemon config
 hali config set telemetry.enabled false
 hali stats --web             # open the live local Web UI
@@ -70,7 +82,25 @@ hali pull mistral:7b:instruct:q4_k_m
 ```
 
 After download the file is saved under the local cache and the daemon is notified
-to start seeding (the daemon is auto-launched if it is not already running).
+to start seeding.
+
+For each successful pull, hali also enqueues a publish event so the ingest worker
+uploads the real `.torrent` artifact (multipart form with torrent file), not just
+metadata.
+
+If the daemon is not running, start it first:
+
+```sh
+hali daemon start
+```
+
+Download the whole Hugging Face repo (all GGUF files in that repo):
+
+```sh
+hali pull owner/repo --non-interactive
+```
+
+Do not pass `--file-name` or `--files` when you want every GGUF file.
 
 If a LAN download completes through the daemon, `hali pull` also prints the derived
 magnet URI. For local HF downloads, the magnet becomes visible once seeding is
@@ -110,8 +140,8 @@ Signature contract (must match backend verification):
 2. `digest = SHA256(canonical)`
 3. `signature = Ed25519Sign(node_private_key, digest)`
 
-By default, the command submits to `http://127.0.0.1:3000/profile`.
-Set `HALI_PROFILE_BACKEND` to override the endpoint.
+By default, the command requires `HALI_PROFILE_BACKEND` to be set to the profile backend URL.
+Set `HALI_PROFILE_BACKEND` to the target endpoint.
 
 ```sh
 hali profile create
@@ -173,6 +203,42 @@ If LAN peers do not provide torrent metadata or are unreachable, the command fai
 
 ---
 
+### `hali open <hali://url>`
+
+Open a model from a `hali://` URL and route into normal pull behavior.
+Routing is strict:
+- `?file=<name>`: single GGUF file mode only
+- `?all=1`: full-repo GGUF mode (all GGUF files)
+- no flag: single best GGUF fallback mode
+
+`open` delegates to `pull` after selecting the route.
+
+```sh
+hali open "hali://model/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
+```
+
+To launch Hali from a webpage, register the protocol handler once:
+
+```sh
+hali protocol install
+```
+
+Then webpages can use links like:
+
+```html
+<a href="hali://model/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive">Open in Hali</a>
+<a href="hali://model/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive?all=1">Download all GGUF variants</a>
+```
+
+Manage registration:
+
+```sh
+hali protocol status
+hali protocol uninstall
+```
+
+---
+
 ### `hali config show`
 
 Show the active daemon config values and config file path.
@@ -196,6 +262,8 @@ Currently supported:
 - `models_dir` -> `<path> | default`
 - `lmstudio_models_dir` -> `<path> | default`
 - `ollama_models_dir` -> `<path> | default`
+- `max_upload_mbps` -> `<integer Mbps>` (0 = unlimited)
+- `max_download_mbps` -> `<integer Mbps>` (0 = unlimited)
 
 ```sh
 hali config set lan.hmac_enabled false
@@ -457,8 +525,15 @@ Example:
 ```json
 {
   "streaming_hash": true,
+  "debug": false,
+  "telemetry_enabled": true,
+  "registry_ingest_url": "https://api.hali.network/ingest",
+  "lan_hmac_enabled": false,
+  "models_dir": "C:\\Users\\jarit\\.hali\\models",
   "lmstudio_models_dir": "C:\\Users\\jarit\\.lmstudio\\models",
-  "ollama_models_dir": "C:\\Users\\jarit\\.ollama\\models"
+  "ollama_models_dir": "C:\\Users\\jarit\\.ollama\\models",
+  "max_upload_mbps": 0,
+  "max_download_mbps": 0
 }
 ```
 

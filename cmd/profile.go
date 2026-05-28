@@ -11,6 +11,7 @@ import (
 	"hali/internal/networking"
 	"hali/internal/profiles"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -37,7 +38,9 @@ func httpPostJSON(url string, data []byte) (*http.Response, error) {
 				return resp, nil
 			}
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			_ = resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				slog.Warn("profile body close failed", "error", cerr)
+			}
 			if len(bytes.TrimSpace(body)) > 0 {
 				lastErr = fmt.Errorf("backend returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 			} else {
@@ -121,7 +124,9 @@ func runProfileCreate(cmd *cobra.Command, args []string) error {
 			prof = sp.Profile
 		} else {
 			// Backward compatibility: allow plain profile.json without signature wrapper.
-			_ = json.Unmarshal(data, &prof)
+			if err := json.Unmarshal(data, &prof); err != nil {
+				slog.Warn("backward compat profile parse failed", "error", err)
+			}
 		}
 	}
 	// Always lock profile ownership to local key.
@@ -188,8 +193,12 @@ func runProfileCreate(cmd *cobra.Command, args []string) error {
 
 	// Save locally
 	if f, err := os.Create(profilePath); err == nil {
-		_ = json.NewEncoder(f).Encode(sp)
-		_ = f.Close()
+		if encErr := json.NewEncoder(f).Encode(sp); encErr != nil {
+			slog.Warn("profile encode failed", "error", encErr)
+		}
+		if cerr := f.Close(); cerr != nil {
+			slog.Warn("profile file close failed", "error", cerr)
+		}
 	}
 
 	// Submit to backend
@@ -227,18 +236,24 @@ func validateProfileBackendURL(raw string) error {
 func submitProfile(sp profiles.SignedProfile) error {
 	backend := strings.TrimSpace(os.Getenv("HALI_PROFILE_BACKEND"))
 	if backend == "" {
-		backend = "http://127.0.0.1:3000/profile"
+		return fmt.Errorf("HALI_PROFILE_BACKEND is not set; set it to the profile backend URL")
 	}
 	if err := validateProfileBackendURL(backend); err != nil {
 		return err
 	}
-	data, _ := json.Marshal(sp)
+	data, err := json.Marshal(sp)
+	if err != nil {
+		return fmt.Errorf("marshal profile: %w", err)
+	}
 	resp, err := httpPostJSON(backend, data)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("profile response read failed", "error", readErr)
+	}
 	if resp.StatusCode != 200 {
 		if len(bytes.TrimSpace(body)) > 0 {
 			return fmt.Errorf("backend returned %s: %s", resp.Status, strings.TrimSpace(string(body)))

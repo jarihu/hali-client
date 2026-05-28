@@ -319,7 +319,7 @@ func TestLaunchTimeoutCustom(t *testing.T) {
 
 func TestSettingsFieldsPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	data := []byte(`{"max_upload_mbps":1,"max_download_mbps":2}`)
+	data := []byte(`{"max_upload_mbps":1,"max_download_mbps":2,"pull_concurrency":3}`)
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -333,11 +333,27 @@ func TestSettingsFieldsPersist(t *testing.T) {
 	if cfg.MaxDownloadMBps != 2 {
 		t.Errorf("MaxDownloadMBps = %d, want 2", cfg.MaxDownloadMBps)
 	}
+	if cfg.PullConcurrency != 3 {
+		t.Errorf("PullConcurrency = %d, want 3", cfg.PullConcurrency)
+	}
 	if cfg.MaxUploadKBpsValue() != 1024 {
 		t.Errorf("MaxUploadKBpsValue() = %d, want 1024", cfg.MaxUploadKBpsValue())
 	}
 	if cfg.MaxDownloadKBpsValue() != 2048 {
 		t.Errorf("MaxDownloadKBpsValue() = %d, want 2048", cfg.MaxDownloadKBpsValue())
+	}
+}
+
+func TestPullConcurrencyValueDefaultsToOne(t *testing.T) {
+	if got := (File{}).PullConcurrencyValue(); got != DefaultPullConcurrency {
+		t.Fatalf("PullConcurrencyValue() = %d, want %d", got, DefaultPullConcurrency)
+	}
+}
+
+func TestPullConcurrencyValueClampsToMax(t *testing.T) {
+	cfg := File{PullConcurrency: MaxPullConcurrency + 100}
+	if got := cfg.PullConcurrencyValue(); got != MaxPullConcurrency {
+		t.Fatalf("PullConcurrencyValue() = %d, want %d", got, MaxPullConcurrency)
 	}
 }
 

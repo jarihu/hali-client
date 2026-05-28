@@ -11,6 +11,7 @@ import (
 
 	"hali/internal/config"
 	"hali/internal/publishing"
+	"hali/internal/safepath"
 )
 
 // Seeder implements seeding.Seeder using qBittorrent WebUI API v2.
@@ -49,9 +50,8 @@ func NewSeeder(cfg config.QBittorrentConfig, torrentDir string) (*Seeder, error)
 func (s *Seeder) Seed(ctx context.Context, infohash, contentDir string) error {
 	slog.Debug("qbittorrent: Seed called", "infohash", infohash, "content_dir", contentDir)
 
-	if err := validateInfohash(infohash); err != nil {
-		slog.Debug("qbittorrent: invalid infohash", "err", err)
-		return err
+	if !safepath.IsValidInfohash(infohash) {
+		return fmt.Errorf("qbittorrent: invalid infohash %q", infohash)
 	}
 
 	if _, err := os.Stat(contentDir); err != nil {
@@ -112,16 +112,4 @@ func (h *QBittorrentHook) OnTorrentPublished(ctx context.Context, e publishing.T
 			slog.Warn("qbittorrent: seeding registration failed (non-fatal)", "err", err, "infohash", e.InfoHash)
 		}
 	}()
-}
-
-func validateInfohash(h string) error {
-	if len(h) != 40 {
-		return fmt.Errorf("qbittorrent: invalid infohash length %d (expected 40)", len(h))
-	}
-	for _, c := range h {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return fmt.Errorf("qbittorrent: invalid infohash character %q", c)
-		}
-	}
-	return nil
 }

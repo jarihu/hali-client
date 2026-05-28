@@ -27,8 +27,13 @@ func main() {
 
 	debug := len(os.Args) > 1 && os.Args[1] == "--debug"
 
-	os.MkdirAll(config.ServiceLogDir(), 0755)
-	cfg, _ := config.LoadService()
+	if err := os.MkdirAll(config.ServiceLogDir(), 0755); err != nil {
+		slog.Warn("create log dir failed", "error", err)
+	}
+	cfg, cfgErr := config.LoadService()
+	if cfgErr != nil {
+		slog.Warn("load service config failed, using defaults", "error", cfgErr)
+	}
 	daemon.InitLogging(config.ServiceLogDir(), debug || (cfg.DebugValue()))
 
 	isService, err := winsvc.IsWindowsService()

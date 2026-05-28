@@ -6,18 +6,20 @@ import "hali/internal/events"
 type Cmd string
 
 const (
-	CmdSeed         Cmd = "seed"
-	CmdSeedStatus   Cmd = "seed_status"   // poll a seed-finalization job
-	CmdEnqueueEvent Cmd = "enqueue_event" // persist a fully formed model pull event
-	CmdStatus       Cmd = "status"
-	CmdList         Cmd = "list"
-	CmdStop         Cmd = "stop"
-	CmdLanQuery     Cmd = "lan_query"  // query LAN model hint cache for a model
-	CmdLanSeen      Cmd = "lan_seen"   // read observational LAN announcement snapshot
-	CmdDownload     Cmd = "download"   // start torrent download by infohash
-	CmdCancelJob    Cmd = "cancel_job" // cancel an active torrent download job
-	CmdJobStatus    Cmd = "job_status" // poll a download job
-	CmdStats        Cmd = "stats"      // get transfer statistics snapshot
+	CmdSeed           Cmd = "seed"
+	CmdSeedFromFile   Cmd = "seed_from_file"  // seed from an existing <infohash>.torrent in torrentDir
+	CmdSeedCollection Cmd = "seed_collection" // seed a deterministic multi-file collection directory
+	CmdSeedStatus     Cmd = "seed_status"     // poll a seed-finalization job
+	CmdEnqueueEvent   Cmd = "enqueue_event"   // persist a fully formed model pull event
+	CmdStatus         Cmd = "status"
+	CmdList           Cmd = "list"
+	CmdStop           Cmd = "stop"
+	CmdLanQuery       Cmd = "lan_query"  // query LAN model hint cache for a model
+	CmdLanSeen        Cmd = "lan_seen"   // read observational LAN announcement snapshot
+	CmdDownload       Cmd = "download"   // start torrent download by infohash
+	CmdCancelJob      Cmd = "cancel_job" // cancel an active torrent download job
+	CmdJobStatus      Cmd = "job_status" // poll a download job
+	CmdStats          Cmd = "stats"      // get transfer statistics snapshot
 )
 
 // Request is sent by the CLI to the daemon.

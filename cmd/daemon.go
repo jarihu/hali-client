@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -234,7 +235,10 @@ func runDaemonRun(_ *cobra.Command, _ []string) error {
 	if err := os.MkdirAll(config.ServiceLogDir(), 0755); err != nil {
 		return err
 	}
-	cfg, _ := config.LoadService()
+	cfg, cfgErr := config.LoadService()
+	if cfgErr != nil {
+		slog.Warn("load service config failed, using defaults", "error", cfgErr)
+	}
 	daemon.InitLogging(config.ServiceLogDir(), cfg.DebugValue())
 
 	if err := os.MkdirAll(filepath.Join(dataDir, "cache"), 0755); err != nil {

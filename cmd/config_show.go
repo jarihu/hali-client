@@ -37,7 +37,8 @@ Supported keys:
 	lmstudio_models_dir     <path> | default
 	ollama_models_dir       <path> | default
 	max_upload_mbps         <integer Mbps> (0 = unlimited)
-	max_download_mbps       <integer Mbps> (0 = unlimited)`,
+	max_download_mbps       <integer Mbps> (0 = unlimited)
+	pull_concurrency        <integer >= 1>`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
 }
@@ -65,12 +66,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 	fmt.Printf("ollama_models_dir: %s\n", strings.TrimSpace(cfg.OllamaModelsDir))
 	fmt.Printf("max_upload_mbps: %d\n", cfg.MaxUploadMBps)
 	fmt.Printf("max_download_mbps: %d\n", cfg.MaxDownloadMBps)
-
-	addr, err := config.DaemonListenAddr()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("daemon_listen_addr: %s\n", addr)
+	fmt.Printf("pull_concurrency: %d\n", cfg.PullConcurrencyValue())
 	return nil
 }
 
@@ -144,8 +140,6 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 		} else {
 			cfg.OllamaModelsDir = value
 		}
-	case "daemon_listen_addr":
-		return fmt.Errorf("unsupported key %q: daemon listen address is fixed to 0.0.0.0", args[0])
 	case "max_upload_mbps":
 		parsed, err := parseNonNegativeInt(value)
 		if err != nil {
@@ -158,6 +152,15 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid value for %s: %w", args[0], err)
 		}
 		cfg.MaxDownloadMBps = parsed
+	case "pull_concurrency":
+		parsed, err := parseNonNegativeInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid value for %s: %w", args[0], err)
+		}
+		if parsed < 1 {
+			return fmt.Errorf("invalid value for %s: must be >= 1", args[0])
+		}
+		cfg.PullConcurrency = parsed
 	case "network.mode", "network_mode":
 		return fmt.Errorf("unsupported key %q: network mode config was removed; only LAN mode is supported", args[0])
 	default:

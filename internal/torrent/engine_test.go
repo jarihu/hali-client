@@ -11,6 +11,7 @@ import (
 
 	"hali/internal/networking"
 
+	"github.com/anacrolix/torrent/metainfo"
 	"golang.org/x/time/rate"
 )
 
@@ -107,6 +108,53 @@ func TestTorrentMetaJSONHasNoWebseedField(t *testing.T) {
 	raw := string(data)
 	if strings.Contains(raw, "webseeds") {
 		t.Errorf("torrentMeta JSON should not contain webseeds: %s", raw)
+	}
+}
+
+func TestBuildHFCollectionWebseedBase(t *testing.T) {
+	tests := []struct {
+		name string
+		repo string
+		want string
+	}{
+		{name: "trimmed repo", repo: " owner/repo ", want: "https://huggingface.co/owner/repo/resolve/main/"},
+		{name: "slash-trimmed", repo: "/owner/repo/", want: "https://huggingface.co/owner/repo/resolve/main/"},
+		{name: "invalid no slash", repo: "owner", want: ""},
+		{name: "empty", repo: "", want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildHFCollectionWebseedBase(tc.repo); got != tc.want {
+				t.Fatalf("buildHFCollectionWebseedBase(%q) = %q, want %q", tc.repo, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSeedCollectionIncludesWebseedBase(t *testing.T) {
+	env := newEnv(t)
+	repoRoot := filepath.Join(env.modelDir("collection-webseed"), "repo")
+	if err := os.MkdirAll(repoRoot, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "a.gguf"), []byte("a"), 0644); err != nil {
+		t.Fatalf("WriteFile a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "b.gguf"), []byte("b"), 0644); err != nil {
+		t.Fatalf("WriteFile b: %v", err)
+	}
+
+	ih, err := env.engine.SeedCollection(repoRoot, "collection:test:webseed", "owner/repo", "main")
+	if err != nil {
+		t.Fatalf("SeedCollection: %v", err)
+	}
+	mi, err := metainfo.LoadFromFile(filepath.Join(env.torrentDir, ih+".torrent"))
+	if err != nil {
+		t.Fatalf("LoadFromFile: %v", err)
+	}
+	want := "https://huggingface.co/owner/repo/resolve/main/"
+	if len(mi.UrlList) != 1 || mi.UrlList[0] != want {
+		t.Fatalf("UrlList = %#v, want [%q]", mi.UrlList, want)
 	}
 }
 

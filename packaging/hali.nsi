@@ -2,7 +2,7 @@
   !define VERSION "dev"
 !endif
 !ifndef REPOROOT
-  !define REPOROOT "."
+  !define REPOROOT "${__FILEDIR__}/.."
 !endif
 
 !define APP_NAME "Hali"
@@ -10,6 +10,14 @@
 !define REG_UNINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hali"
 !define REG_ENV "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 !define SVC_NAME "halid"
+
+!ifndef HALI_BIN
+  !define HALI_BIN "${REPOROOT}/dist/hali-windows-amd64.exe"
+!endif
+
+!ifndef HALID_BIN
+  !define HALID_BIN "${REPOROOT}/dist/halid-windows-amd64.exe"
+!endif
 
 Name "${APP_NAME} ${VERSION}"
 OutFile "${REPOROOT}/dist/hali-${VERSION}-windows-amd64-setup.exe"
@@ -23,6 +31,7 @@ Unicode true
 !include "WordFunc.nsh"
 
 !insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "${REPOROOT}/LICENSE"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -32,17 +41,54 @@ Unicode true
 
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Install"
-  ; Best effort: stop any running daemon/service instances before replacing binaries.
-  ; Keep this tolerant so fresh installs are not blocked when nothing is running.
-  ExecWait 'sc stop "${SVC_NAME}"'
-  ExecWait 'sc stop "HaliDaemon"'
+Function StopAndDeleteService
+  Exch $0
+
+  ; Prevent service auto-restart loops while we replace binaries.
+  ExecWait 'sc failure "$0" reset= 0 actions= ""'
+  ExecWait 'sc stop "$0"'
   ExecWait 'taskkill /F /T /IM halid.exe'
+
+  ; Wait briefly for SCM to fully transition to stopped/deleted state.
+  Sleep 400
+  ExecWait 'sc stop "$0"'
+  Sleep 400
+
+  ; Remove old registrations so upgrades can recreate service reliably.
+  ExecWait 'sc delete "$0"'
+
+  Pop $0
+FunctionEnd
+
+Function un.StopAndDeleteService
+  Exch $0
+
+  ; Prevent service auto-restart loops while we remove binaries.
+  ExecWait 'sc failure "$0" reset= 0 actions= ""'
+  ExecWait 'sc stop "$0"'
+  ExecWait 'taskkill /F /T /IM halid.exe'
+
+  Sleep 400
+  ExecWait 'sc stop "$0"'
+  Sleep 400
+
+  ExecWait 'sc delete "$0"'
+
+  Pop $0
+FunctionEnd
+
+Section "Install"
+  ; Best effort cleanup for historical service names before replacing binaries.
+  ; Keep this tolerant so fresh installs are not blocked when nothing is running.
+  Push "${SVC_NAME}"
+  Call StopAndDeleteService
+  Push "HaliDaemon"
+  Call StopAndDeleteService
 
   SetOutPath "${INSTALL_DIR}"
 
-  File /oname=hali.exe "${REPOROOT}/dist/hali-windows-amd64.exe"
-  File /oname=halid.exe "${REPOROOT}/dist/halid-windows-amd64.exe"
+  File /oname=hali.exe "${HALI_BIN}"
+  File /oname=halid.exe "${HALID_BIN}"
 
   ; Register hali:// URL protocol handler
   WriteRegStr HKCR "hali" "" "URL:Hali Protocol"
@@ -73,8 +119,10 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
-  ExecWait 'sc stop "${SVC_NAME}"'
-  ExecWait 'sc delete "${SVC_NAME}"'
+  Push "${SVC_NAME}"
+  Call un.StopAndDeleteService
+  Push "HaliDaemon"
+  Call un.StopAndDeleteService
 
   ; Remove hali:// URL protocol handler
   DeleteRegKey HKCR "hali"

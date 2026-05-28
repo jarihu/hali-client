@@ -105,6 +105,10 @@ external daemon dependencies
 ```
 main.go
 
+editionapi/
+  runtime.go
+  interfaces.go
+
 cmd/
   root.go
   pull.go
@@ -147,7 +151,7 @@ internal/
     identity.go
 ```
 
-No additional top-level modules allowed.
+No additional top-level modules allowed beyond those explicitly listed.
 
 4. Core Data Model
 Model Identity
@@ -206,10 +210,10 @@ Magnet representation (derived only)
 - Magnet output must use btih with lowercase hexadecimal SHA1.
 - Query parameter order must be deterministic: `xt`, `dn`, `tr`, `ws`.
 - `tr` and `ws` are distinct parameters and must never be conflated.
-Piece size (FIXED)
-16 * 1024 * 1024 bytes (16 MiB)
+Piece size (VARIABLE)
+Auto-computed by `choosePieceSize` based on file size (2–16 MiB).
 
-MUST be constant across all torrents.
+Must be deterministic for same file size — identical files produce identical piece sizes.
 
 5. Component Responsibilities
 5.1 CLI (hali)
@@ -240,6 +244,8 @@ Supported config keys (subset relevant to CLI behavior):
 - `streaming_hash` — piece hashing during HF download
 - `qbittorrent.enabled` — must be `true` to enable internet seeding integration (daemon-side)
 - `qbittorrent.url` — qBittorrent WebUI base URL (required when enabled)
+- `lan_hmac_enabled` — require HMAC authentication on LAN announcements
+- `max_upload_mbps` / `max_download_mbps` — rate limits in Mbps (0 = unlimited)
 5.2 Daemon
 
 Responsibilities:
@@ -252,7 +258,9 @@ maintain local model cache
 
 IPC:
 
-TCP socket on 127.0.0.1 (random port); address stored at ~/.hali/daemon.addr
+TCP socket on 127.0.0.1:47432 (fixed port, loopback only). Address stored at ~/.hali/daemon.addr.
+Web dashboard on 127.0.0.1:47433 (fixed port).
+Unix domain socket at ~/.hali/hali.sock on Linux/macOS.
 
 Commands:
 
@@ -315,7 +323,7 @@ Rules:
 
 `Seeder` contract:
 - Idempotent — "already registered" is success, not an error
-- Validates infohash format before any network call
+- Validates infohash format via `safepath.IsValidInfohash` before any network call
 - Verifies `contentDir` exists on disk before any network call
 - Verifies `<torrentDir>/<infohash>.torrent` exists before any network call (no silent fallback)
 - Uses `filepath.ToSlash(savePath)` when sending paths to qBittorrent WebUI

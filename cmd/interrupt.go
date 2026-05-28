@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"hali/internal/daemon"
@@ -15,8 +14,12 @@ func withInterruptContext(parent context.Context) (context.Context, context.Canc
 }
 
 func cancelLANJob(jobID string) {
-	if strings.TrimSpace(jobID) == "" || !daemon.IsRunning() {
+	if jobID == "" || !daemon.IsRunning() {
 		return
 	}
 	_, _ = daemon.DefaultClient().Send(daemon.Request{Cmd: daemon.CmdCancelJob, JobID: jobID})
+}
+
+func cancelPullJob(childJobID string) {
+	cancelLANJob(childJobID)
 }

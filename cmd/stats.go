@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"hali/internal/cache"
 	"hali/internal/daemon"
 	"hali/internal/torrent"
 
@@ -80,7 +81,7 @@ func runStatsWeb() error {
 func printStats(s torrent.StatsSnapshot) {
 	fmt.Printf("Daemon:   running  (uptime %s)\n", s.Uptime)
 	fmt.Printf("Speeds:   ↓ %s   ↑ %s\n", fmtSpeed(s.DownSpeed), fmtSpeed(s.UpSpeed))
-	fmt.Printf("Session:  ↓ %s   ↑ %s\n", fmtBytes(s.TotalDown), fmtBytes(s.TotalUp))
+	fmt.Printf("Session:  ↓ %s   ↑ %s\n", cache.FormatSize(s.TotalDown), cache.FormatSize(s.TotalUp))
 
 	if len(s.Models) == 0 {
 		fmt.Println("\nNo active torrents.")
@@ -111,31 +112,10 @@ func printStats(s torrent.StatsSnapshot) {
 }
 
 func fmtSpeed(n int64) string {
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d B/s", n)
-	case n < 1<<20:
-		return fmt.Sprintf("%.1f KB/s", float64(n)/1024)
-	case n < 1<<30:
-		return fmt.Sprintf("%.1f MB/s", float64(n)/(1<<20))
-	default:
-		return fmt.Sprintf("%.2f GB/s", float64(n)/(1<<30))
+	if n == 0 {
+		return "—"
 	}
-}
-
-func fmtBytes(n int64) string {
-	switch {
-	case n == 0:
-		return "0 B"
-	case n < 1024:
-		return fmt.Sprintf("%d B", n)
-	case n < 1<<20:
-		return fmt.Sprintf("%.1f KB", float64(n)/1024)
-	case n < 1<<30:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	default:
-		return fmt.Sprintf("%.2f GB", float64(n)/(1<<30))
-	}
+	return cache.FormatSize(n) + "/s"
 }
 
 func truncateID(s string, n int) string {
