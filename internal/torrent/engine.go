@@ -371,6 +371,36 @@ func (e *Engine) SeedFromPieceHashes(modelDir, filename, modelID, hfRepo, revisi
 	return ih, err
 }
 
+// SeedCollection creates a deterministic multi-file torrent for repoDir
+// (typically a directory named "repo" containing GGUF files) and starts seeding.
+func (e *Engine) SeedCollection(repoDir, modelID, hfRepo, revision string) (string, error) {
+	e.mu.Lock()
+	entry := &TorrentEntry{ModelID: modelID, Status: StatusHashing}
+	e.entries[modelID] = entry
+	e.mu.Unlock()
+
+	ih, err := func() (ih string, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = seedErrFromPanic(r)
+				slog.Error("seed collection panic", "model_id", modelID, "panic", r)
+			}
+		}()
+		return e.seedCollectionInner(repoDir, modelID, hfRepo, revision, entry)
+	}()
+
+	e.mu.Lock()
+	if err != nil {
+		entry.Status = StatusError
+		entry.Error = err.Error()
+	} else {
+		entry.Status = StatusSeeding
+	}
+	e.mu.Unlock()
+
+	return ih, err
+}
+
 // torrentMeta is the comment field written into every torrent.
 // Field order is fixed — JSON marshaling of structs is deterministic.
 // FROZEN core fields (model_id, revision, format, source): renaming breaks parsers.
@@ -379,6 +409,131 @@ type torrentMeta struct {
 	Revision string `json:"revision"`
 	Format   string `json:"format"`
 	Source   string `json:"source"`
+}
+
+func (e *Engine) seedCollectionInner(repoDir, modelID, hfRepo, revision string, entry *TorrentEntry) (string, error) {
+	st, err := os.Stat(repoDir)
+	if err != nil {
+		return "", fmt.Errorf("stat collection dir: %w", err)
+	}
+	if !st.IsDir() {
+		return "", fmt.Errorf("collection path is not a directory: %s", repoDir)
+	}
+
+	totalBytes, err := dirTotalSize(repoDir)
+	if err != nil {
+		return "", fmt.Errorf("collection size: %w", err)
+	}
+	if totalBytes <= 0 {
+		return "", fmt.Errorf("collection directory %s has no files", repoDir)
+	}
+
+	private := true
+	info := metainfo.Info{PieceLength: choosePieceSize(totalBytes), Private: &private}
+	if err := info.BuildFromFilePath(repoDir); err != nil {
+		return "", fmt.Errorf("build collection info: %w", err)
+	}
+	infoBytes, err := bencode.Marshal(info)
+	if err != nil {
+		return "", fmt.Errorf("encoding collection info: %w", err)
+	}
+
+	comment, err := json.Marshal(torrentMeta{
+		ModelID:  modelID,
+		Revision: revision,
+		Format:   "gguf_collection",
+		Source:   "huggingface",
+	})
+	if err != nil {
+		slog.Warn("failed to marshal collection comment, using empty comment", "model_id", modelID, "error", err)
+		comment = []byte("{}")
+	}
+
+	mi := &metainfo.MetaInfo{
+		InfoBytes: infoBytes,
+		Comment:   string(comment),
+		CreatedBy: "hali",
+		// CreationDate intentionally omitted for deterministic output.
+	}
+
+	webseedBase := buildHFCollectionWebseedBase(hfRepo)
+	if webseedBase != "" {
+		mi.UrlList = []string{webseedBase}
+		slog.Debug("collection webseed attached", "model_id", modelID, "url", webseedBase)
+	}
+
+	ih := mi.HashInfoBytes()
+	magnetURI, err := buildMagnetFromInfoHash(ih[:], "", info.Name, nil, mi.UrlList)
+	if err != nil {
+		return "", fmt.Errorf("building collection magnet: %w", err)
+	}
+
+	torrentPath := filepath.Join(e.torrentDir, ih.HexString()+".torrent")
+	if err := writeTorrent(mi, torrentPath); err != nil {
+		return "", err
+	}
+
+	spec := gotorrent.TorrentSpecFromMetaInfo(mi)
+	baseDir := filepath.Dir(repoDir)
+	spec.Storage = modelDirStorage(baseDir)
+
+	var t *gotorrent.Torrent
+	for attempt := 0; attempt < seedAddMaxRetries; attempt++ {
+		t, _, err = e.client.AddTorrentSpec(spec)
+		if err == nil {
+			break
+		}
+		if !isRetryableSeedErr(err) || attempt == seedAddMaxRetries-1 {
+			return "", fmt.Errorf("adding collection torrent: %w", err)
+		}
+		backoff := time.Duration(1<<attempt) * time.Second
+		slog.Warn("seed collection retry", "model_id", modelID, "attempt", attempt+1, "backoff", backoff, "error", err)
+		time.Sleep(backoff)
+	}
+
+	e.mu.Lock()
+	entry.t = t
+	entry.Identity = TorrentIdentity{InfohashV1: ih.HexString()}
+	entry.MagnetURI = magnetURI
+	e.mu.Unlock()
+
+	<-t.GotInfo()
+	t.DownloadAll()
+
+	return ih.HexString(), nil
+}
+
+func dirTotalSize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		st, statErr := d.Info()
+		if statErr != nil {
+			return statErr
+		}
+		total += st.Size()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func buildHFCollectionWebseedBase(hfRepo string) string {
+	hfRepo = strings.Trim(strings.TrimSpace(hfRepo), "/")
+	if hfRepo == "" {
+		return ""
+	}
+	if !strings.Contains(hfRepo, "/") {
+		return ""
+	}
+	return "https://huggingface.co/" + hfRepo + "/resolve/main/"
 }
 
 func (e *Engine) seedInner(modelDir, filename, modelID, hfRepo, revision string, entry *TorrentEntry, pieces []byte, fileSize int64) (string, error) {
@@ -567,6 +722,70 @@ func (e *Engine) StartSeed(modelDir, filename, modelID, hfRepo, revision string,
 			return
 		}
 		job.Identity = IdentityFromV1(infohash)
+	}()
+
+	return jobID
+}
+
+// StartSeedCollection finalizes a multi-file collection torrent asynchronously
+// and returns a pollable job ID.
+func (e *Engine) StartSeedCollection(repoDir, modelID, hfRepo, revision string) string {
+	jobID := fmt.Sprintf("seed-%x", time.Now().UnixNano())
+	job := &SeedJob{ID: jobID, ModelID: modelID}
+
+	e.mu.Lock()
+	e.seedJobs[jobID] = job
+	e.mu.Unlock()
+
+	go func() {
+		infohash, err := e.SeedCollection(repoDir, modelID, hfRepo, revision)
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		job.Done = true
+		if err != nil {
+			slog.Error("seed collection job failed", "job_id", jobID, "model_id", modelID, "error", err)
+			job.Error = err.Error()
+			return
+		}
+		if entry, ok := e.entries[modelID]; ok {
+			job.Identity = entry.Identity
+			job.MagnetURI = entry.MagnetURI
+			return
+		}
+		job.Identity = IdentityFromV1(infohash)
+	}()
+
+	return jobID
+}
+
+// StartSeedFromTorrentFile starts seeding from an existing <infohash>.torrent
+// file in torrentDir and returns a pollable job ID.
+func (e *Engine) StartSeedFromTorrentFile(modelDir, infohashHex, modelID string, identity TorrentIdentity) string {
+	jobID := fmt.Sprintf("seed-%x", time.Now().UnixNano())
+	job := &SeedJob{ID: jobID, ModelID: modelID}
+
+	e.mu.Lock()
+	e.seedJobs[jobID] = job
+	e.mu.Unlock()
+
+	go func() {
+		ih, err := e.SeedFromTorrentFile(modelDir, infohashHex, modelID, identity)
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		job.Done = true
+		if err != nil {
+			slog.Error("seed-from-file job failed", "job_id", jobID, "model_id", modelID, "error", err)
+			job.Error = err.Error()
+			return
+		}
+		if entry, ok := e.entries[modelID]; ok {
+			job.Identity = entry.Identity
+			job.MagnetURI = entry.MagnetURI
+			return
+		}
+		job.Identity = IdentityFromV1(ih)
 	}()
 
 	return jobID
@@ -886,8 +1105,8 @@ func (e *Engine) isDownloadCancelled(jobID string) bool {
 
 // JobStatus returns a snapshot of a download job, or (nil, false) if not found.
 func (e *Engine) JobStatus(jobID string) (*DownloadJob, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	job, ok := e.jobs[jobID]
 	if !ok {
 		return nil, false
@@ -1024,7 +1243,7 @@ func buildHybridSingleFileInfo(filePath, filename string, pieces []byte, fileSiz
 		}
 	}
 
-	pl := info.PieceLength   // shorthand; v2 merkle must use the same piece size as v1
+	pl := info.PieceLength         // shorthand; v2 merkle must use the same piece size as v1
 	plInt := int(info.PieceLength) // SumMinLength takes int
 
 	file, err := os.Open(filePath)

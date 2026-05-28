@@ -3,6 +3,7 @@ package cmd
 import (
 	"hali/editionapi"
 	"hali/internal/config"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 )
@@ -12,9 +13,12 @@ var jsonOutput bool
 
 // NewRootCmd constructs the full CLI tree in one deterministic composition step.
 func NewRootCmd(rt *editionapi.Runtime) *cobra.Command {
-	// Best effort: create visible editable config files on first run.
-	_ = config.EnsureConfigMaterialized()
-	_ = config.EnsureServiceConfigMaterialized()
+	if err := config.EnsureConfigMaterialized(); err != nil {
+		slog.Warn("config materialize failed", "error", err)
+	}
+	if err := config.EnsureServiceConfigMaterialized(); err != nil {
+		slog.Warn("service config materialize failed", "error", err)
+	}
 
 	root := &cobra.Command{
 		Use:   "hali",
@@ -52,6 +56,7 @@ Use "hali <command> --help" for detailed help on any command.`,
 	configurePullFlags()
 	configureSearchFlags()
 	configureProfileFlags()
+	configureProtocolCommands()
 	root.PersistentFlags().BoolVar(&allowUnreachablePublish, "allow-unreachable-publish", false, "Allow publish actions that may be unreachable from internet peers in lan_only mode")
 	root.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false, "Disable interactive prompts")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Emit JSON output when supported (implies non-interactive)")
@@ -84,6 +89,7 @@ Use "hali <command> --help" for detailed help on any command.`,
 	profileCmd.AddCommand(profileCreateCmd)
 
 	root.AddCommand(pullCmd, searchCmd, listCmd, statsCmd, versionCmd, openCmd)
+	root.AddCommand(protocolCmd)
 	root.AddCommand(profileCmd)
 	root.AddCommand(newCompletionCmd(root))
 

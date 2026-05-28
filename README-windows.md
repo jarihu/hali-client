@@ -26,6 +26,22 @@ Produces:
 - `bin\oss\hali-tray.exe` — system tray app
 - `installer\Hali.msi` — Windows installer
 
+## hali:// protocol handler (web launch)
+
+MSI/installer builds register `hali://` automatically. For portable/manual installs,
+register it once per user:
+
+```powershell
+hali protocol install
+hali protocol status
+```
+
+Webpages can then launch Hali directly:
+
+```html
+<a href="hali://model/Qwen/Qwen3-32B?version=latest">Open in Hali</a>
+```
+
 ## Windows Service (SCM)
 
 > **The service is optional.** Without it, `hali pull` auto-starts the daemon after
@@ -142,6 +158,9 @@ $env:OLLAMA_HOME = "C:\Users\jarit\.ollama"
 ### Get a model
 
 ```powershell
+# Start daemon (required for seeding + .torrent ingest uploads)
+hali daemon start
+
 # Search Hugging Face — results ranked by downloads, filtered to GGUF
 hali search llama
 
@@ -153,7 +172,13 @@ hali pull TheBloke/Llama-3-8B-Instruct-GGUF
 
 # Or use the canonical model ID to skip all prompts
 hali pull llama:8b:instruct:q5_k_m
+
+# Download all GGUF files from a repo (whole repo variants)
+hali pull TheBloke/Llama-3-8B-Instruct-GGUF --non-interactive
 ```
+
+Successful pulls enqueue ingest delivery so the backend receives the real `.torrent`
+artifact produced by the daemon.
 
 ### Inspect your cache and daemon state
 

@@ -18,8 +18,15 @@ var openCmd = &cobra.Command{
 	Long: `Open a model from a hali:// protocol URL.
 
 This command is used by the OS protocol handler when a user clicks an
-"Open in Hali" button on a website. It resolves the model, selects the
-best available GGUF quantization, and starts the normal pull flow.
+"Open in Hali" button on a website.
+
+Routing is strict:
+- ?file=<name> -> single-file GGUF mode only
+- ?all=1       -> full-repo GGUF mode (all GGUF files)
+- no flag      -> single best GGUF mode
+
+All routes delegate into the normal pull flow (hybrid node: artifact generation,
+backend registration, and local LAN seeding startup).
 
 Example:
   hali open "hali://model/Qwen/Qwen3-32B?version=latest"`,
@@ -40,18 +47,37 @@ func runOpen(cmd *cobra.Command, args []string) error {
 	defer unlock()
 
 	client := hf.NewClient()
+	if strings.TrimSpace(parsed.File) != "" {
+		files, _, err := client.GetFiles(cmd.Context(), parsed.RepositoryID(), parsed.Revision())
+		if err != nil {
+			return fmt.Errorf("resolve %s: %w", parsed.RepositoryID(), err)
+		}
+		chosen, err := selectRequestedGGUF(files, parsed.File)
+		if err != nil {
+			return err
+		}
+		return runPullWithOptions(cmd, pull.Options{
+			Repo:           parsed.RepositoryID(),
+			Revision:       parsed.Revision(),
+			FileName:       chosen,
+			NonInteractive: true,
+		})
+	}
+
+	if parsed.All {
+		return runPullWithOptions(cmd, pull.Options{
+			Repo:           parsed.RepositoryID(),
+			Revision:       parsed.Revision(),
+			NonInteractive: true,
+		})
+	}
+
 	files, _, err := client.GetFiles(cmd.Context(), parsed.RepositoryID(), parsed.Revision())
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", parsed.RepositoryID(), err)
 	}
 
-	chosen, err := selectRequestedGGUF(files, parsed.File)
-	if err != nil {
-		return err
-	}
-	if chosen == "" {
-		chosen = selectBestGGUF(files)
-	}
+	chosen := selectBestGGUF(files)
 	if chosen == "" {
 		return fmt.Errorf("no GGUF files found for %s", parsed.RepositoryID())
 	}

@@ -12,6 +12,7 @@ func TestParse_Valid(t *testing.T) {
 		name      string
 		version   string
 		file      string
+		all       bool
 		repoID    string
 		revision  string
 	}{
@@ -62,6 +63,11 @@ func TestParse_Valid(t *testing.T) {
 			repoID: "Qwen/Qwen3-32B", revision: "main",
 		},
 		{
+			raw:       "hali://model/Qwen/Qwen3-32B?all=1",
+			namespace: "Qwen", name: "Qwen3-32B", version: "", all: true,
+			repoID: "Qwen/Qwen3-32B", revision: "main",
+		},
+		{
 			// Unknown query params are accepted
 			raw:       "hali://model/Qwen/Qwen3-32B?version=latest&unknown=ignored",
 			namespace: "Qwen", name: "Qwen3-32B", version: "latest",
@@ -87,6 +93,9 @@ func TestParse_Valid(t *testing.T) {
 			if h.File != tc.file {
 				t.Errorf("file: got %q, want %q", h.File, tc.file)
 			}
+			if h.All != tc.all {
+				t.Errorf("all: got %t, want %t", h.All, tc.all)
+			}
 			if h.RepositoryID() != tc.repoID {
 				t.Errorf("RepositoryID: got %q, want %q", h.RepositoryID(), tc.repoID)
 			}
@@ -94,6 +103,35 @@ func TestParse_Valid(t *testing.T) {
 				t.Errorf("Revision: got %q, want %q", h.Revision(), tc.revision)
 			}
 		})
+	}
+}
+
+func TestParse_InvalidAll(t *testing.T) {
+	cases := []string{
+		"hali://model/Qwen/Qwen3-32B?all=true",
+		"hali://model/Qwen/Qwen3-32B?all=0",
+		"hali://model/Qwen/Qwen3-32B?all=yes",
+	}
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Parse(raw)
+			if err == nil {
+				t.Fatalf("expected error for invalid all parameter in %q", raw)
+			}
+		})
+	}
+}
+
+func TestParse_FileAndAllBothPresent(t *testing.T) {
+	h, err := Parse("hali://model/Qwen/Qwen3-32B?file=q4.gguf&all=1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h.File != "q4.gguf" {
+		t.Fatalf("file = %q, want q4.gguf", h.File)
+	}
+	if !h.All {
+		t.Fatal("expected all=true when all=1 is present")
 	}
 }
 

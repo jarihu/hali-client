@@ -24,6 +24,11 @@ const (
 
 const DefaultRegistryIngestURL = "https://api.hali.network/ingest"
 
+const (
+	DefaultPullConcurrency = 1
+	MaxPullConcurrency     = 32
+)
+
 // DataDir returns the root data directory for hali.
 // On Windows: %ProgramData%\Hali
 // On other platforms: ~/.hali
@@ -73,9 +78,9 @@ type File struct {
 	ModelsDir           string `json:"models_dir,omitempty"`
 	LMStudioModels      string `json:"lmstudio_models_dir,omitempty"`
 	OllamaModelsDir     string `json:"ollama_models_dir,omitempty"`
-	DaemonListenAddr    string `json:"daemon_listen_addr,omitempty"`
 	MaxUploadMBps       int    `json:"max_upload_mbps,omitempty"`
 	MaxDownloadMBps     int    `json:"max_download_mbps,omitempty"`
+	PullConcurrency     int    `json:"pull_concurrency,omitempty"`
 	// Timeout overrides (milliseconds). 0 means use the built-in default.
 	TorrentMetaTimeoutMs int `json:"torrent_meta_timeout_ms,omitempty"`
 	IPCDeadlineMs        int `json:"ipc_deadline_ms,omitempty"`
@@ -106,9 +111,9 @@ func defaultVisibleConfig(modelsDir string) File {
 		ModelsDir:           modelsDir,
 		LMStudioModels:      "",
 		OllamaModelsDir:     "",
-		DaemonListenAddr:    "0.0.0.0",
 		MaxUploadMBps:       0,
 		MaxDownloadMBps:     0,
+		PullConcurrency:     DefaultPullConcurrency,
 	}
 }
 
@@ -191,6 +196,18 @@ func (f File) MaxDownloadKBpsValue() int {
 	return f.MaxDownloadMBps * 1024
 }
 
+// PullConcurrencyValue returns the effective multi-file pull concurrency.
+// Values < 1 fall back to default. Values above MaxPullConcurrency are clamped.
+func (f File) PullConcurrencyValue() int {
+	if f.PullConcurrency < 1 {
+		return DefaultPullConcurrency
+	}
+	if f.PullConcurrency > MaxPullConcurrency {
+		return MaxPullConcurrency
+	}
+	return f.PullConcurrency
+}
+
 // SetMaxUploadKBps stores a runtime KiB/s upload limit into config Mbps units.
 func (f *File) SetMaxUploadKBps(kbps int) {
 	if kbps <= 0 {
@@ -250,9 +267,6 @@ func EnsureModelsDirPersisted() error {
 // EnsureConfigMaterialized writes a fully visible baseline config.json to
 // DataDir when the file does not exist yet.
 func EnsureConfigMaterialized() error {
-	if !shouldMaterializeUserConfig() {
-		return nil
-	}
 	path := filepath.Join(DataDir(), "config.json")
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -260,10 +274,6 @@ func EnsureConfigMaterialized() error {
 		return fmt.Errorf("stat config %s: %w", path, err)
 	}
 	return saveAtPath(path, defaultVisibleConfig(filepath.Join(DataDir(), "models")))
-}
-
-func shouldMaterializeUserConfig() bool {
-	return true
 }
 
 // EnsureServiceConfigMaterialized writes a fully visible baseline config.json
@@ -332,9 +342,6 @@ func renderConfigJSONC(cfg File, dataRoot string) []byte {
 	if strings.TrimSpace(merged.ModelsDir) == "" {
 		merged.ModelsDir = defaults.ModelsDir
 	}
-	if strings.TrimSpace(merged.DaemonListenAddr) == "" {
-		merged.DaemonListenAddr = defaults.DaemonListenAddr
-	}
 
 	var b strings.Builder
 	b.WriteString("{\n")
@@ -363,10 +370,7 @@ func renderConfigJSONC(cfg File, dataRoot string) []byte {
 	b.WriteString(fmt.Sprintf("  \"lmstudio_models_dir\": %s,\n\n", jsonQuote(strings.TrimSpace(merged.LMStudioModels))))
 
 	b.WriteString("  // Optional Ollama models directory override.\n")
-	b.WriteString(fmt.Sprintf("  \"ollama_models_dir\": %s,\n\n", jsonQuote(strings.TrimSpace(merged.OllamaModelsDir))))
-
-	b.WriteString("  // Daemon HTTP bind address (fixed to 0.0.0.0).\n")
-	b.WriteString(fmt.Sprintf("  \"daemon_listen_addr\": %s", jsonQuote(strings.TrimSpace(merged.DaemonListenAddr))))
+	b.WriteString(fmt.Sprintf("  \"ollama_models_dir\": %s", jsonQuote(strings.TrimSpace(merged.OllamaModelsDir))))
 
 	b.WriteString(",\n\n")
 	b.WriteString("  // Advanced: upload rate limit in Mbps (0 = unlimited).\n")
@@ -547,16 +551,6 @@ func OllamaModelsDir() (string, error) {
 	return strings.TrimSpace(cfg.OllamaModelsDir), nil
 }
 
-// DaemonListenAddr returns the listen address for daemon HTTP on port 47433.
-// Sharing is a core feature, so this is fixed to 0.0.0.0.
-func DaemonListenAddr() (string, error) {
-	if _, err := LoadService(); err != nil {
-		return "", err
-	}
-	return "0.0.0.0", nil
-}
-
-// ServiceDataDir returns the daemon state root — always the current user's ~/.hali.
 func ServiceDataDir() string {
 	if d := strings.TrimSpace(os.Getenv("HALI_SERVICE_DATA_DIR")); d != "" {
 		return d

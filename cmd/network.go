@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"hali/internal/cache"
 	"hali/internal/config"
@@ -249,67 +247,13 @@ func runNetworkPullFromSeen(ctx context.Context, row daemon.LanSeenEntry) error 
 	}
 
 	metaWaitTicks := 0
-	for {
-		select {
-		case <-ctx.Done():
-			cancelLANJob(jobID)
-			fmt.Println("\nLAN download canceled.")
-			return fmt.Errorf("download canceled by user")
-		case <-time.After(time.Second):
+	_, err = FinishDownloadJob(ctx, dc, jobID, modelDir, id, store, hfRepo, hfRevision, row.Infohash, row.InfohashV2, func(js daemon.JobStatusData) {
+		metaWaitTicks++
+		if metaWaitTicks == 1 || metaWaitTicks%5 == 0 {
+			fmt.Printf("\nWaiting for metadata (active=%d pending=%d half-open=%d total=%d)\n", js.ActivePeers, js.PendingPeers, js.HalfOpenPeers, js.TotalPeers)
 		}
-		pr, err := dc.Send(daemon.Request{Cmd: daemon.CmdJobStatus, JobID: jobID, Dir: modelDir})
-		if err != nil {
-			return fmt.Errorf("LAN download error: %w", err)
-		}
-		raw, err = json.Marshal(pr.Data)
-		if err != nil {
-			continue
-		}
-		var js daemon.JobStatusData
-		if err := json.Unmarshal(raw, &js); err != nil {
-			continue
-		}
-		if js.Error != "" {
-			return fmt.Errorf("LAN download failed: %s", js.Error)
-		}
-		if js.Total == 0 && js.Written == 0 && !js.Done {
-			metaWaitTicks++
-			if metaWaitTicks == 1 || metaWaitTicks%5 == 0 {
-				fmt.Printf("\nWaiting for metadata (active=%d pending=%d half-open=%d total=%d)\n", js.ActivePeers, js.PendingPeers, js.HalfOpenPeers, js.TotalPeers)
-			}
-		}
-		printTorrentProgress(js.Written, js.Total, js.RateBps, js.ElapsedSec, js.ETASeconds)
-		if !js.Done {
-			continue
-		}
-
-		fmt.Println()
-		snapshotHash, hashErr := hashFileSHA256(filepath.Join(modelDir, js.Filename))
-		if hashErr != nil {
-			return fmt.Errorf("download completed, but snapshot hash failed: %w", hashErr)
-		}
-
-		meta := cache.Metadata{
-			HFRepo:     hfRepo,
-			HFRevision: hfRevision,
-			HFSnapshot: snapshotHash,
-			Infohash:   row.Infohash,
-			InfohashV2: row.InfohashV2,
-			Files:      []string{js.Filename},
-			Size:       js.Total,
-		}
-		if err := store.Save(id, meta); err != nil {
-			fmt.Printf("Warning: failed to save metadata for %s: %v\n", id, err)
-		}
-
-		fmt.Printf("Saved %s  (%s)  [from LAN]\n", id, cache.FormatSize(js.Total))
-		fmt.Printf("  model:    %s\n", filepath.Join(modelDir, js.Filename))
-		fmt.Printf("  metadata: %s\n", filepath.Join(modelDir, "metadata.json"))
-		if js.MagnetURI != "" {
-			fmt.Printf("  magnet:   %s\n", js.MagnetURI)
-		}
-		return nil
-	}
+	})
+	return err
 }
 
 func pickLANRow(rows []daemon.LanSeenEntry) (int, error) {

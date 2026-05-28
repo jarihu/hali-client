@@ -22,12 +22,24 @@ import (
 	"hali/internal/winsvc"
 )
 
+var (
+	dashboardURL   string
+	healthEndpoint string
+	statsEndpoint  string
+	pauseEndpoint  string
+	resumeEndpoint string
+)
+
+func initEndpoints() {
+	base := fmt.Sprintf("http://127.0.0.1:%d", config.HTTPPort)
+	dashboardURL = base
+	healthEndpoint = base + "/api/health"
+	statsEndpoint = base + "/api/stats"
+	pauseEndpoint = base + "/api/pause"
+	resumeEndpoint = base + "/api/resume"
+}
+
 const (
-	dashboardURL   = "http://127.0.0.1:47433"
-	healthEndpoint = "http://127.0.0.1:47433/api/health"
-	statsEndpoint  = "http://127.0.0.1:47433/api/stats"
-	pauseEndpoint  = "http://127.0.0.1:47433/api/pause"
-	resumeEndpoint = "http://127.0.0.1:47433/api/resume"
 	pollInterval   = 3 * time.Second
 	backoff1       = 1 * time.Second
 	backoff2       = 2 * time.Second
@@ -61,6 +73,7 @@ func main() {
 }
 
 func onReady() {
+	initEndpoints()
 	systray.SetIcon(icons[stateIdle])
 	systray.SetTooltip("Hali — starting…")
 

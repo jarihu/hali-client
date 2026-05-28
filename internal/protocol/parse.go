@@ -22,6 +22,7 @@ type HaliURL struct {
 	Name      string // e.g., "Qwen3-32B"
 	Version   string // "latest", a 40-char hex SHA, or a short tag
 	File      string // optional GGUF filename/path within the repo
+	All       bool   // repo GGUF mode: true when all=1
 }
 
 // RepositoryID returns the neutral repository identifier (namespace/name).
@@ -108,6 +109,10 @@ func Parse(raw string) (*HaliURL, error) {
 	if err != nil {
 		return nil, err
 	}
+	all, err := parseAllFlag(q.Get("all"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &HaliURL{
 		Action:    action,
@@ -115,7 +120,19 @@ func Parse(raw string) (*HaliURL, error) {
 		Name:      name,
 		Version:   version,
 		File:      file,
+		All:       all,
 	}, nil
+}
+
+func parseAllFlag(raw string) (bool, error) {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	if v == "" {
+		return false, nil
+	}
+	if v == "1" {
+		return true, nil
+	}
+	return false, fmt.Errorf("invalid all %q: expected all=1", raw)
 }
 
 func sanitizeRequestedFile(raw string) (string, error) {
