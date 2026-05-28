@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -267,6 +268,10 @@ func EnsureModelsDirPersisted() error {
 // EnsureConfigMaterialized writes a fully visible baseline config.json to
 // DataDir when the file does not exist yet.
 func EnsureConfigMaterialized() error {
+	if !shouldMaterializeUserConfig() {
+		return nil
+	}
+
 	path := filepath.Join(DataDir(), "config.json")
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -274,6 +279,23 @@ func EnsureConfigMaterialized() error {
 		return fmt.Errorf("stat config %s: %w", path, err)
 	}
 	return saveAtPath(path, defaultVisibleConfig(filepath.Join(DataDir(), "models")))
+}
+
+func shouldMaterializeUserConfig() bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+
+	serviceCfg := filepath.Join(ServiceDataDir(), "config.json")
+	if _, err := os.Stat(serviceCfg); err == nil {
+		return false
+	}
+
+	if _, err := os.Stat(IPCSocketPath()); err == nil {
+		return false
+	}
+
+	return true
 }
 
 // EnsureServiceConfigMaterialized writes a fully visible baseline config.json
@@ -342,6 +364,9 @@ func renderConfigJSONC(cfg File, dataRoot string) []byte {
 	if strings.TrimSpace(merged.ModelsDir) == "" {
 		merged.ModelsDir = defaults.ModelsDir
 	}
+	if merged.PullConcurrency < 1 {
+		merged.PullConcurrency = defaults.PullConcurrency
+	}
 
 	var b strings.Builder
 	b.WriteString("{\n")
@@ -379,6 +404,10 @@ func renderConfigJSONC(cfg File, dataRoot string) []byte {
 	b.WriteString(",\n\n")
 	b.WriteString("  // Advanced: download rate limit in Mbps (0 = unlimited).\n")
 	b.WriteString(fmt.Sprintf("  \"max_download_mbps\": %d", merged.MaxDownloadMBps))
+
+	b.WriteString(",\n\n")
+	b.WriteString("  // Advanced: number of files to download concurrently when pulling multiple files.\n")
+	b.WriteString(fmt.Sprintf("  \"pull_concurrency\": %d", merged.PullConcurrency))
 	if merged.TorrentMetaTimeoutMs > 0 {
 		b.WriteString(",\n\n")
 		b.WriteString("  // Advanced: torrent metadata timeout in milliseconds.\n")

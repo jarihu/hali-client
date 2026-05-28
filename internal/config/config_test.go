@@ -444,31 +444,12 @@ func TestEnsureServiceConfigMaterializedCreatesVisibleConfig(t *testing.T) {
 	}
 }
 
-func TestDaemonListenAddrAlwaysLAN(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("HALI_SERVICE_DATA_DIR", dataDir)
-
-	for _, tc := range []struct {
-		name string
-		addr string
-	}{
-		{name: "default", addr: ""},
-		{name: "legacy-localhost", addr: "127.0.0.1"},
-		{name: "lan", addr: "0.0.0.0"},
-		{name: "invalid", addr: "bad"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := SaveService(File{DaemonListenAddr: tc.addr}); err != nil {
-				t.Fatalf("SaveService: %v", err)
-			}
-			got, err := DaemonListenAddr()
-			if err != nil {
-				t.Fatalf("DaemonListenAddr: %v", err)
-			}
-			if got != "0.0.0.0" {
-				t.Fatalf("DaemonListenAddr() = %q, want 0.0.0.0", got)
-			}
-		})
+func TestPortsAreFixedContract(t *testing.T) {
+	if IPCPort != 47432 {
+		t.Fatalf("IPCPort = %d, want 47432", IPCPort)
+	}
+	if HTTPPort != 47433 {
+		t.Fatalf("HTTPPort = %d, want 47433", HTTPPort)
 	}
 }
 

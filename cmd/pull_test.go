@@ -49,9 +49,9 @@ func TestArtifactKeyForPull(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.expect, func(t *testing.T) {
-			got := artifactKeyForPull(tt.modelID, tt.revision)
+			got := daemon.ArtifactKey(tt.modelID, tt.revision)
 			if got != tt.expect {
-				t.Errorf("artifactKeyForPull(%q, %q) = %q, want %q", tt.modelID, tt.revision, got, tt.expect)
+				t.Errorf("ArtifactKey(%q, %q) = %q, want %q", tt.modelID, tt.revision, got, tt.expect)
 			}
 		})
 	}
