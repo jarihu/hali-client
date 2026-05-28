@@ -101,6 +101,17 @@ jobs:
           grep -F 'WriteRegStr HKCR "hali\shell\open\command" ""' packaging/hali.nsi
           grep -F 'DeleteRegKey HKCR "hali"' packaging/hali.nsi
 
+      - name: Verify MSI service sequencing guardrails
+        if: matrix.pkg == 'nsis'
+        run: |
+          set -euo pipefail
+          test -f installer/hali.wxs
+          grep -F 'Id="LegacyHalidSvcCtrl"' installer/hali.wxs
+          grep -F 'Name="halid"' installer/hali.wxs
+          ! grep -F 'Start="install"' installer/hali.wxs
+          ! grep -F '<util:ServiceConfig' installer/hali.wxs
+          grep -F 'WixUILicenseRtf' installer/hali.wxs
+
       - name: Build Windows installer
         if: matrix.pkg == 'nsis'
         run: makensis -DVERSION=${{ github.ref_name }} -DREPOROOT=$(pwd) packaging/hali.nsi

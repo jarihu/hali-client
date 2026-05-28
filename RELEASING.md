@@ -95,6 +95,34 @@ hali --help
 systemctl status halid
 ```
 
+## 7) Post-release smoke test (Windows)
+
+On a clean elevated PowerShell:
+
+```powershell
+msiexec /i installer\Hali.msi /l*v installer\msi-install.log
+Get-Service HaliDaemon
+& "C:\Program Files\Hali\hali.exe" --help
+```
+
+Expected:
+
+- installer completes successfully (no "ended prematurely")
+- service `HaliDaemon` exists after install
+- CLI responds from install location
+
+Upgrade/repair sanity check (service already running):
+
+```powershell
+Start-Service HaliDaemon
+msiexec /i installer\Hali.msi /l*v installer\msi-upgrade.log
+```
+
+Expected:
+
+- install/upgrade succeeds while service is running
+- no `Wix4ExecServiceConfig`/`Service ... does not exist` errors in log
+
 ## Notes
 
 - CI in this repository currently validates and builds, but does not create `.deb` release assets by default.
